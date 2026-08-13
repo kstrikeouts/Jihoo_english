@@ -1,0 +1,61 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// 초등 3~6학년 필수 영단어
+model Word {
+  id           Int      @id @default(autoincrement())
+  text         String   @unique
+  meaning      String
+  partOfSpeech String
+  exampleEn    String
+  exampleKo    String
+  grade        Int // 3, 4, 5, 6
+  category     String // 테마 (동물, 학교, 음식 ...)
+  createdAt    DateTime @default(now())
+
+  progress  WordProgress?
+  testItems TestAttemptItem[]
+}
+
+// 단어별 학습 진도 (Leitner 방식 간이 SRS)
+model WordProgress {
+  id             Int       @id @default(autoincrement())
+  wordId         Int       @unique
+  word           Word      @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  box            Int       @default(0) // 0: 미학습, 1~5: Leitner 박스 (높을수록 숙련)
+  status         String    @default("NEW") // NEW, LEARNING, REVIEWING, MASTERED
+  correctCount   Int       @default(0)
+  wrongCount     Int       @default(0)
+  lastReviewedAt DateTime?
+  nextReviewAt   DateTime?
+  updatedAt      DateTime  @updatedAt
+}
+
+// 테스트(퀴즈) 응시 기록
+model TestAttempt {
+  id             Int      @id @default(autoincrement())
+  createdAt      DateTime @default(now())
+  grade          Int? // null이면 학년 혼합
+  totalQuestions Int
+  correctAnswers Int
+
+  items TestAttemptItem[]
+}
+
+model TestAttemptItem {
+  id            Int         @id @default(autoincrement())
+  testAttemptId Int
+  testAttempt   TestAttempt @relation(fields: [testAttemptId], references: [id], onDelete: Cascade)
+  wordId        Int
+  word          Word        @relation(fields: [wordId], references: [id])
+  wasCorrect    Boolean
+}
