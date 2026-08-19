@@ -13,17 +13,19 @@
 ## 기술 스택
 
 - Next.js (App Router) + TypeScript + Tailwind CSS
-- Prisma + SQLite (로컬 파일 기반 DB)
+- Prisma + PostgreSQL
 
 ## 시작하기
 
 ```bash
-npm install          # 의존성 설치 (Prisma Client 자동 생성)
-cp .env.example .env # DATABASE_URL 설정
-npm run db:migrate   # DB 스키마 생성
-npm run db:seed      # 초등 필수 영단어 400개 시드 데이터 삽입
-npm run dev          # 개발 서버 실행
+npm install                        # 의존성 설치 (Prisma Client 자동 생성)
+cp .env.example .env               # DATABASE_URL을 Postgres 연결 문자열로 설정
+npx prisma migrate dev --name init # 최초 1회: 마이그레이션 생성 + DB 스키마 반영
+npm run db:seed                    # 초등 필수 영단어 400개 시드 데이터 삽입
+npm run dev                        # 개발 서버 실행
 ```
+
+마이그레이션 파일이 이미 있는 상태(예: 배포 환경)에서는 `npm run db:migrate`(`prisma migrate deploy`)로 적용합니다.
 
 [http://localhost:3000](http://localhost:3000) 에서 확인할 수 있습니다.
 
