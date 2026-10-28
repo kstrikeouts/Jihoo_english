@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "level": "g34",
+  "title": "3~4학년 단어장",
+  "source": "시작용 임시 목록 — 출판사 교집합 분석 후 교체 예정 (publishers 값이 null 인 항목)",
+  "words": [
+    { "id": "g34-0001", "word": "hello", "type": "word", "meaning": "안녕 (만날 때)", "theme": "greeting", "emoji": "👋", "example": "Hello, I'm Jihu.", "example_ko": "안녕, 나는 지후야.", "pattern": "Hello, I'm ___.", "publishers": null },
+    { "id": "g34-0002", "word": "How are you?", "type": "chunk", "meaning": "어떻게 지내?", "theme": "greeting", "emoji": "🙂", "example": "How are you? I'm fine.", "example_ko": "어떻게 지내? 나는 잘 지내.", "pattern": "How are you?", "publishers": null },
+    { "id": "g34-0003", "word": "Nice to meet you.", "type": "chunk", "meaning": "만나서 반가워", "theme": "greeting", "emoji": "🤝", "example": "Hi, I'm Mina. Nice to meet you.", "example_ko": "안녕, 나는 미나야. 만나서 반가워.", "pattern": "Nice to meet you.", "publishers": null },
+    { "id": "g34-0004", "word": "Thank you.", "type": "chunk", "meaning": "고마워", "theme": "greeting", "emoji": "🙏", "example": "Thank you, Mom.", "example_ko": "고마워요, 엄마.", "pattern": "Thank you, ___.", "publishers": null },
+    { "id": "g34-0005", "word": "goodbye", "type": "word", "meaning": "잘 가 (헤어질 때)", "theme": "greeting", "emoji": "🙋", "example": "Goodbye, see you tomorrow.", "example_ko": "잘 가, 내일 봐.", "pattern": "Goodbye, ___.", "publishers": null },
+
+    { "id": "g34-0006", "word": "one", "type": "word", "meaning": "하나, 1", "theme": "number", "emoji": "1️⃣", "example": "I have one cat.", "example_ko": "나는 고양이가 한 마리 있어.", "pattern": "I have one ___.", "publishers": null },
+    { "id": "g34-0007", "word": "two", "type": "word", "meaning": "둘, 2", "theme": "number", "emoji": "2️⃣", "example": "I have two eyes.", "example_ko": "나는 눈이 두 개 있어.", "pattern": "I have two ___.", "publishers": null },
+    { "id": "g34-0008", "word": "three", "type": "word", "meaning": "셋, 3", "theme": "number", "emoji": "3️⃣", "example": "I see three birds.", "example_ko": "새 세 마리가 보여.", "pattern": "I see three ___.", "publishers": null },
+    { "id": "g34-0009", "word": "four", "type": "word", "meaning": "넷, 4", "theme": "number", "emoji": "4️⃣", "example": "A dog has four legs.", "example_ko": "개는 다리가 네 개야.", "pattern": "I have four ___.", "publishers": null },
+    { "id": "g34-0010", "word": "five", "type": "word", "meaning": "다섯, 5", "theme": "number", "emoji": "5️⃣", "example": "I am ten. My sister is five.", "example_ko": "나는 열 살이야. 내 여동생은 다섯 살이야.", "pattern": "I have five ___.", "publishers": null },
+
+    { "id": "g34-0011", "word": "six", "type": "word", "meaning": "여섯, 6", "theme": "number", "emoji": "6️⃣", "example": "I have six pencils.", "example_ko": "나는 연필이 여섯 자루 있어.", "pattern": "I have six ___.", "publishers": null },
+    { "id": "g34-0012", "word": "seven", "type": "word", "meaning": "일곱, 7", "theme": "number", "emoji": "7️⃣", "example": "I get up at seven.", "example_ko": "나는 7시에 일어나.", "pattern": "I get up at ___.", "publishers": null },
+    { "id": "g34-0013", "word": "eight", "type": "word", "meaning": "여덟, 8", "theme": "number", "emoji": "8️⃣", "example": "I see eight apples.", "example_ko": "사과 여덟 개가 보여.", "pattern": "I see eight ___.", "publishers": null },
+    { "id": "g34-0014", "word": "nine", "type": "word", "meaning": "아홉, 9", "theme": "number", "emoji": "9️⃣", "example": "We have nine players.", "example_ko": "우리는 선수가 아홉 명이야.", "pattern": "We have nine ___.", "publishers": null },
+    { "id": "g34-0015", "word": "ten", "type": "word", "meaning": "열, 10", "theme": "number", "emoji": "🔟", "example": "I am ten years old.", "example_ko": "나는 열 살이야.", "pattern": "I am ___ years old.", "publishers": null },
+
+    { "id": "g34-0016", "word": "How many?", "type": "chunk", "meaning": "몇 개야?", "theme": "number", "emoji": "🔢", "example": "How many apples? Three apples.", "example_ko": "사과가 몇 개야? 세 개.", "pattern": "How many ___?", "publishers": null },
+    { "id": "g34-0017", "word": "red", "type": "word", "meaning": "빨간색", "theme": "color", "emoji": "🔴", "example": "The apple is red.", "example_ko": "그 사과는 빨간색이야.", "pattern": "It is ___.", "publishers": null },
+    { "id": "g34-0018", "word": "blue", "type": "word", "meaning": "파란색", "theme": "color", "emoji": "🔵", "example": "The sky is blue.", "example_ko": "하늘은 파란색이야.", "pattern": "It is ___.", "publishers": null },
+    { "id": "g34-0019", "word": "yellow", "type": "word", "meaning": "노란색", "theme": "color", "emoji": "🟡", "example": "The banana is yellow.", "example_ko": "바나나는 노란색이야.", "pattern": "It is ___.", "publishers": null },
+    { "id": "g34-0020", "word": "green", "type": "word", "meaning": "초록색", "theme": "color", "emoji": "🟢", "example": "The tree is green.", "example_ko": "나무는 초록색이야.", "pattern": "It is ___.", "publishers": null },
+
+    { "id": "g34-0021", "word": "What color is it?", "type": "chunk", "meaning": "그건 무슨 색이야?", "theme": "color", "emoji": "🎨", "example": "What color is it? It's pink.", "example_ko": "그건 무슨 색이야? 분홍색이야.", "pattern": "What color is it?", "publishers": null },
+    { "id": "g34-0022", "word": "pink", "type": "word", "meaning": "분홍색", "theme": "color", "emoji": "🩷", "example": "My bag is pink.", "example_ko": "내 가방은 분홍색이야.", "pattern": "My bag is ___.", "publishers": null },
+    { "id": "g34-0023", "word": "black", "type": "word", "meaning": "검은색", "theme": "color", "emoji": "⚫", "example": "The cat is black.", "example_ko": "그 고양이는 검은색이야.", "pattern": "The cat is ___.", "publishers": null },
+    { "id": "g34-0024", "word": "white", "type": "word", "meaning": "흰색", "theme": "color", "emoji": "⚪", "example": "Milk is white.", "example_ko": "우유는 흰색이야.", "pattern": "It is ___.", "publishers": null },
+    { "id": "g34-0025", "word": "What's this?", "type": "chunk", "meaning": "이건 뭐야?", "theme": "thing", "emoji": "❓", "example": "What's this? It's a pencil.", "example_ko": "이건 뭐야? 연필이야.", "pattern": "What's this? It's a ___.", "publishers": null },
+
+    { "id": "g34-0026", "word": "cat", "type": "word", "meaning": "고양이", "theme": "animal", "emoji": "🐱", "example": "I like cats.", "example_ko": "나는 고양이를 좋아해.", "pattern": "I like ___.", "publishers": null },
+    { "id": "g34-0027", "word": "dog", "type": "word", "meaning": "개", "theme": "animal", "emoji": "🐶", "example": "I have a dog.", "example_ko": "나는 개가 있어.", "pattern": "I have a ___.", "publishers": null },
+    { "id": "g34-0028", "word": "bird", "type": "word", "meaning": "새", "theme": "animal", "emoji": "🐦", "example": "The bird can fly.", "example_ko": "새는 날 수 있어.", "pattern": "The ___ can fly.", "publishers": null },
+    { "id": "g34-0029", "word": "fish", "type": "word", "meaning": "물고기", "theme": "animal", "emoji": "🐟", "example": "The fish can swim.", "example_ko": "물고기는 헤엄칠 수 있어.", "pattern": "The ___ can swim.", "publishers": null },
+    { "id": "g34-0030", "word": "rabbit", "type": "word", "meaning": "토끼", "theme": "animal", "emoji": "🐰", "example": "The rabbit can jump.", "example_ko": "토끼는 깡충 뛸 수 있어.", "pattern": "The ___ can jump.", "publishers": null },
+
+    { "id": "g34-0031", "word": "lion", "type": "word", "meaning": "사자", "theme": "animal", "emoji": "🦁", "example": "The lion is big.", "example_ko": "사자는 커.", "pattern": "The ___ is big.", "publishers": null },
+    { "id": "g34-0032", "word": "tiger", "type": "word", "meaning": "호랑이", "theme": "animal", "emoji": "🐯", "example": "I see a tiger.", "example_ko": "호랑이가 보여.", "pattern": "I see a ___.", "publishers": null },
+    { "id": "g34-0033", "word": "monkey", "type": "word", "meaning": "원숭이", "theme": "animal", "emoji": "🐵", "example": "The monkey likes bananas.", "example_ko": "원숭이는 바나나를 좋아해.", "pattern": "The ___ likes bananas.", "publishers": null },
+    { "id": "g34-0034", "word": "I like ___.", "type": "chunk", "meaning": "나는 ~을 좋아해", "theme": "like", "emoji": "💛", "example": "I like dogs.", "example_ko": "나는 개를 좋아해.", "pattern": "I like ___.", "publishers": null },
+    { "id": "g34-0035", "word": "Do you like ___?", "type": "chunk", "meaning": "너는 ~을 좋아하니?", "theme": "like", "emoji": "🤔", "example": "Do you like pizza? Yes, I do.", "example_ko": "너 피자 좋아해? 응, 좋아해.", "pattern": "Do you like ___?", "publishers": null },
+
+    { "id": "g34-0036", "word": "apple", "type": "word", "meaning": "사과", "theme": "food", "emoji": "🍎", "example": "I like apples.", "example_ko": "나는 사과를 좋아해.", "pattern": "I like ___.", "publishers": null },
+    { "id": "g34-0037", "word": "banana", "type": "word", "meaning": "바나나", "theme": "food", "emoji": "🍌", "example": "I want a banana.", "example_ko": "나는 바나나를 원해.", "pattern": "I want a ___.", "publishers": null },
+    { "id": "g34-0038", "word": "pizza", "type": "word", "meaning": "피자", "theme": "food", "emoji": "🍕", "example": "Pizza is my favorite.", "example_ko": "피자가 제일 좋아.", "pattern": "I like ___.", "publishers": null },
+    { "id": "g34-0039", "word": "milk", "type": "word", "meaning": "우유", "theme": "food", "emoji": "🥛", "example": "I drink milk.", "example_ko": "나는 우유를 마셔.", "pattern": "I drink ___.", "publishers": null },
+    { "id": "g34-0040", "word": "egg", "type": "word", "meaning": "달걀", "theme": "food", "emoji": "🥚", "example": "I eat an egg.", "example_ko": "나는 달걀을 먹어.", "pattern": "I eat an ___.", "publishers": null },
+
+    { "id": "g34-0041", "word": "book", "type": "word", "meaning": "책", "theme": "school", "emoji": "📘", "example": "This is my book.", "example_ko": "이건 내 책이야.", "pattern": "This is my ___.", "publishers": null },
+    { "id": "g34-0042", "word": "pencil", "type": "word", "meaning": "연필", "theme": "school", "emoji": "✏️", "example": "I have a pencil.", "example_ko": "나는 연필이 있어.", "pattern": "I have a ___.", "publishers": null },
+    { "id": "g34-0043", "word": "bag", "type": "word", "meaning": "가방", "theme": "school", "emoji": "🎒", "example": "My bag is heavy.", "example_ko": "내 가방은 무거워.", "pattern": "This is my ___.", "publishers": null },
+    { "id": "g34-0044", "word": "eraser", "type": "word", "meaning": "지우개", "theme": "school", "emoji": "🧽", "example": "Can I use your eraser?", "example_ko": "네 지우개 써도 돼?", "pattern": "I have an ___.", "publishers": null },
+    { "id": "g34-0045", "word": "ruler", "type": "word", "meaning": "자", "theme": "school", "emoji": "📏", "example": "This ruler is long.", "example_ko": "이 자는 길어.", "pattern": "This is my ___.", "publishers": null },
+
+    { "id": "g34-0046", "word": "mom", "type": "word", "meaning": "엄마", "theme": "family", "emoji": "👩", "example": "I love my mom.", "example_ko": "나는 엄마를 사랑해.", "pattern": "This is my ___.", "publishers": null },
+    { "id": "g34-0047", "word": "dad", "type": "word", "meaning": "아빠", "theme": "family", "emoji": "👨", "example": "My dad is tall.", "example_ko": "우리 아빠는 키가 커.", "pattern": "This is my ___.", "publishers": null },
+    { "id": "g34-0048", "word": "sister", "type": "word", "meaning": "여자 형제 (누나·언니·여동생)", "theme": "family", "emoji": "👧", "example": "This is my sister.", "example_ko": "얘는 내 여동생이야.", "pattern": "This is my ___.", "publishers": null },
+    { "id": "g34-0049", "word": "brother", "type": "word", "meaning": "남자 형제 (형·오빠·남동생)", "theme": "family", "emoji": "👦", "example": "My brother is nine.", "example_ko": "우리 형은 아홉 살이야.", "pattern": "This is my ___.", "publishers": null },
+    { "id": "g34-0050", "word": "Who is he?", "type": "chunk", "meaning": "그는 누구야?", "theme": "family", "emoji": "🧑", "example": "Who is he? He is my dad.", "example_ko": "그는 누구야? 우리 아빠야.", "pattern": "Who is he? He is my ___.", "publishers": null },
+
+    { "id": "g34-0051", "word": "head", "type": "word", "meaning": "머리", "theme": "body", "emoji": "🙆", "example": "Touch your head.", "example_ko": "머리를 만져 봐.", "pattern": "Touch your ___.", "publishers": null },
+    { "id": "g34-0052", "word": "eye", "type": "word", "meaning": "눈", "theme": "body", "emoji": "👁️", "example": "Close your eyes.", "example_ko": "눈을 감아.", "pattern": "Close your ___.", "publishers": null },
+    { "id": "g34-0053", "word": "nose", "type": "word", "meaning": "코", "theme": "body", "emoji": "👃", "example": "The elephant has a long nose.", "example_ko": "코끼리는 코가 길어.", "pattern": "Touch your ___.", "publishers": null },
+    { "id": "g34-0054", "word": "hand", "type": "word", "meaning": "손", "theme": "body", "emoji": "✋", "example": "Raise your hand.", "example_ko": "손을 들어.", "pattern": "Raise your ___.", "publishers": null },
+    { "id": "g34-0055", "word": "foot", "type": "word", "meaning": "발", "theme": "body", "emoji": "🦶", "example": "My foot is big.", "example_ko": "내 발은 커.", "pattern": "Touch your ___.", "publishers": null },
+
+    { "id": "g34-0056", "word": "Sit down, please.", "type": "chunk", "meaning": "앉아 주세요", "theme": "action", "emoji": "🪑", "example": "Sit down, please. Okay.", "example_ko": "앉아 주세요. 알겠어요.", "pattern": "Sit down, please.", "publishers": null },
+    { "id": "g34-0057", "word": "Stand up, please.", "type": "chunk", "meaning": "일어서 주세요", "theme": "action", "emoji": "🧍", "example": "Stand up, please. Okay.", "example_ko": "일어서 주세요. 알겠어요.", "pattern": "Stand up, please.", "publishers": null },
+    { "id": "g34-0058", "word": "swim", "type": "word", "meaning": "수영하다", "theme": "action", "emoji": "🏊", "example": "I can swim.", "example_ko": "나는 수영할 수 있어.", "pattern": "I can ___.", "publishers": null },
+    { "id": "g34-0059", "word": "jump", "type": "word", "meaning": "뛰어오르다", "theme": "action", "emoji": "🦘", "example": "I can jump high.", "example_ko": "나는 높이 뛸 수 있어.", "pattern": "I can ___.", "publishers": null },
+    { "id": "g34-0060", "word": "Can you ___?", "type": "chunk", "meaning": "너는 ~할 수 있니?", "theme": "action", "emoji": "💪", "example": "Can you swim? Yes, I can.", "example_ko": "너 수영할 수 있어? 응, 할 수 있어.", "pattern": "Can you ___?", "publishers": null },
+
+    { "id": "g34-0061", "word": "dance", "type": "word", "meaning": "춤추다", "theme": "action", "emoji": "💃", "example": "Let's dance.", "example_ko": "춤추자.", "pattern": "I can ___.", "publishers": null },
+    { "id": "g34-0062", "word": "sing", "type": "word", "meaning": "노래하다", "theme": "action", "emoji": "🎤", "example": "I can sing well.", "example_ko": "나는 노래를 잘해.", "pattern": "I can ___.", "publishers": null },
+    { "id": "g34-0063", "word": "happy", "type": "word", "meaning": "행복한", "theme": "feeling", "emoji": "😊", "example": "I'm happy today.", "example_ko": "나는 오늘 행복해.", "pattern": "I'm ___.", "publishers": null },
+    { "id": "g34-0064", "word": "sad", "type": "word", "meaning": "슬픈", "theme": "feeling", "emoji": "😢", "example": "Are you sad?", "example_ko": "너 슬프니?", "pattern": "I'm ___.", "publishers": null },
+    { "id": "g34-0065", "word": "hungry", "type": "word", "meaning": "배고픈", "theme": "feeling", "emoji": "🤤", "example": "I'm hungry. Let's eat.", "example_ko": "배고파. 먹자.", "pattern": "I'm ___.", "publishers": null },
+
+    { "id": "g34-0066", "word": "sunny", "type": "word", "meaning": "화창한", "theme": "weather", "emoji": "☀️", "example": "It's sunny today.", "example_ko": "오늘은 화창해.", "pattern": "It's ___ today.", "publishers": null },
+    { "id": "g34-0067", "word": "rainy", "type": "word", "meaning": "비 오는", "theme": "weather", "emoji": "🌧️", "example": "It's rainy. Take your umbrella.", "example_ko": "비가 와. 우산 챙겨.", "pattern": "It's ___ today.", "publishers": null },
+    { "id": "g34-0068", "word": "How's the weather?", "type": "chunk", "meaning": "날씨 어때?", "theme": "weather", "emoji": "🌤️", "example": "How's the weather? It's sunny.", "example_ko": "날씨 어때? 화창해.", "pattern": "How's the weather?", "publishers": null },
+    { "id": "g34-0069", "word": "Let's play!", "type": "chunk", "meaning": "같이 놀자!", "theme": "action", "emoji": "⚽", "example": "Let's play soccer!", "example_ko": "축구 하자!", "pattern": "Let's play ___!", "publishers": null },
+    { "id": "g34-0070", "word": "I'm sorry.", "type": "chunk", "meaning": "미안해", "theme": "greeting", "emoji": "🙇", "example": "I'm sorry. That's okay.", "example_ko": "미안해. 괜찮아.", "pattern": "I'm sorry.", "publishers": null }
+  ]
+}

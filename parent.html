@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>지후 English · 부모</title>
+  <meta name="theme-color" content="#FFF6E9">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* 부모 화면: 차분한 톤, 정보 밀도 ↑ */
+    .viz-root {
+      --series-1: #2a78d6;  /* 학습 */
+      --series-2: #eb6834;  /* 듣기 */
+      --seq-0: #EEF4FB; --seq-1: #CFE1F6; --seq-2: #A5C6EE; --seq-3: #74A5E2; --seq-4: #4686D7; --seq-5: #2a78d6; --seq-6: #1A4F93;
+      --grid: #EDE6DA; --axis: #B9B1A4;
+    }
+    body.parent { font-family: "Gowun Dodum", var(--font); -webkit-user-select: text; user-select: text; }
+    .parent h1, .parent h2, .parent .kpi b, .parent .btn, .parent .seg button { font-family: var(--font); }
+    .parent .app { padding-bottom: calc(env(safe-area-inset-bottom) + 40px); max-width: 720px; }
+    .parent h2 { display: flex; align-items: baseline; gap: 8px; }
+    .parent h2 small { font-size: 13px; color: var(--muted); font-family: "Gowun Dodum", sans-serif; }
+    .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    @media (min-width: 600px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+    .kpi { padding: 14px 16px; }
+    .kpi b { display: block; font-size: 28px; font-weight: 400; line-height: 1.2; }
+    .kpi span { font-size: 13px; color: var(--muted); }
+    .kpi em { font-style: normal; font-size: 13px; color: var(--muted); }
+    .readout { min-height: 22px; font-size: 14px; color: var(--ink); margin-top: 8px; }
+    .legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    svg.chart { width: 100%; max-width: 640px; height: auto; display: block; overflow: visible; }
+    svg.chart text { font-family: "Gowun Dodum", sans-serif; font-size: 10px; fill: var(--muted); }
+    svg.chart .hit { fill: transparent; cursor: pointer; }
+    svg.chart .sel { stroke: var(--ink); stroke-width: 2; }
+    .cal { display: grid; grid-template-columns: 22px repeat(var(--weeks), 1fr); gap: 3px; }
+    .cal .dl { font-size: 11px; color: var(--muted); display: grid; place-items: center; }
+    .cal button { aspect-ratio: 1; border-radius: 4px; background: var(--seq-0); padding: 0; }
+    .cal button.l1 { background: var(--seq-2); } .cal button.l2 { background: var(--seq-3); }
+    .cal button.l3 { background: var(--seq-5); } .cal button.l4 { background: var(--seq-6); }
+    .cal button.future { visibility: hidden; }
+    .cal button.today { outline: 2px solid var(--ink); outline-offset: 1px; }
+    .cal button.sel { outline: 2px solid var(--primary); outline-offset: 1px; }
+    .scale { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); margin-top: 8px; justify-content: flex-end; }
+    .scale i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .hbar { display: grid; grid-template-columns: 56px 1fr 44px; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; }
+    .hbar .track { height: 18px; background: var(--seq-0); border-radius: 0 4px 4px 0; overflow: hidden; }
+    .hbar .fill { height: 100%; border-radius: 0 4px 4px 0; }
+    .hbar .v { text-align: right; color: var(--muted); }
+    table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table.t th { text-align: left; font-weight: 400; color: var(--muted); font-size: 12px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+    table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    table.t td.en { font-family: var(--en); font-weight: 500; }
+    table.t td.num { text-align: right; white-space: nowrap; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--bg); }
+    .tag.ok { background: #DDF6EC; color: var(--mint-d); } .tag.no { background: #FFE4E4; color: var(--red-d); }
+    .tableview summary { font-size: 13px; color: var(--muted); margin-top: 10px; cursor: pointer; }
+    .rw { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .rw .grow { flex: 1; }
+    .rw button { color: var(--muted); font-size: 18px; padding: 4px 8px; }
+    .form { display: grid; gap: 10px; margin-top: 12px; }
+    .form .row > * { min-width: 0; }
+    select.input { appearance: none; -webkit-appearance: none; background: #fff; }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+    .head a { font-size: 14px; color: var(--sky-d); text-decoration: none; white-space: nowrap; }
+  </style>
+</head>
+<body class="parent">
+  <main id="app" class="app viz-root"><p class="muted" style="text-align:center;padding-top:40vh">불러오는 중…</p></main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script type="module" src="js/parent.js"></script>
+</body>
+</html>
