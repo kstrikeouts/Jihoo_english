@@ -205,3 +205,88 @@ p { margin: 0; }
 .toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 14px); transform: translateX(-50%); background: var(--ink); color: #fff;
   padding: 10px 18px; border-radius: 999px; font-size: 15px; z-index: 50; animation: fade 2.4s forwards; }
 @keyframes fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ── Day 학습 ─────────────────────────────── */
+.phase-chip { font-size: 13px; color: var(--muted); background: var(--card); padding: 5px 10px; border-radius: 999px; white-space: nowrap; box-shadow: var(--shadow); }
+.day-head { display: flex; align-items: center; gap: 10px; }
+.day-badge { background: var(--ink); color: #fff; font-family: var(--en); font-weight: 600; font-size: 16px; padding: 5px 12px; border-radius: 10px; }
+.day-theme { font-size: 20px; }
+.chips7 { display: flex; justify-content: space-between; gap: 4px; margin: 14px 0 4px; font-size: 30px; }
+.chips7 span { flex: 1; aspect-ratio: 1; display: grid; place-items: center; background: var(--bg); border-radius: 14px; font-size: 26px; }
+.today-done { text-align: center; }
+.td-medal { font-size: 72px; line-height: 1.1; animation: pop .5s ease-out; }
+.td-title { font-size: 24px; margin: 6px 0 4px; }
+.stamps { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.stamps span { aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-family: var(--en); font-size: 14px; color: var(--muted);
+  border: 2px dashed #E3D6C2; }
+.stamps span.on { border: 0; background: var(--mint); color: #fff; font-size: 18px; transform: rotate(-8deg); box-shadow: 0 3px 0 var(--mint-d); }
+.stamps span.on.perfect { background: var(--yellow); box-shadow: 0 3px 0 #D9A21E; }
+.stamps span.now { border: 3px solid var(--primary); color: var(--primary-d); font-weight: 600; animation: pulse 1.6s infinite; }
+.test-rules { display: grid; gap: 8px; text-align: left; font-size: 17px; }
+.test-rules b { display: inline-block; width: 38px; color: var(--primary-d); font-weight: 400; }
+.test-rules .muted { font-size: 14px; }
+.combo { display: inline-block; background: var(--ink); color: #fff; padding: 4px 12px; border-radius: 999px; font-size: 15px; margin-bottom: 8px; animation: pop .35s ease-out; }
+
+/* 스펠링 */
+.slot-gap { width: 14px; }
+.slots.sm { gap: 4px; }
+.slots.sm .slot { width: 32px; height: 46px; font-size: 22px; border-radius: 10px; }
+.tiles.sm .tile { width: 44px; height: 52px; font-size: 24px; }
+.slot.next { border-bottom-color: var(--primary); background: #FFF1E8; }
+.slot.good { background: #E6F8F1; border-bottom-color: var(--mint); color: var(--mint-d); }
+.slot.bad { background: #FFECEC; border-bottom-color: var(--red); color: var(--red-d); animation: shake .35s; }
+.spell-tools { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+
+/* ── 🎉 칭찬 씬 ─────────────────────────────── */
+.party { position: fixed; inset: 0; z-index: 60; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: radial-gradient(circle at 50% 22%, #FFE7B8 0, #FFD3A8 28%, #FFB98A 60%, #FF9E6E 100%);
+  padding: calc(env(safe-area-inset-top) + 18px) max(16px, env(safe-area-inset-left)) calc(env(safe-area-inset-bottom) + 20px) max(16px, env(safe-area-inset-right));
+  animation: partyIn .35s ease-out; }
+.party.perfect { background: radial-gradient(circle at 50% 22%, #FFF6C9 0, #FFE27A 30%, #FFC23D 62%, #FF9F2E 100%); }
+@keyframes partyIn { from { opacity: 0; transform: scale(1.04); } }
+.party .confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.party-in { position: relative; z-index: 1; max-width: 420px; margin: 0 auto; text-align: center; color: var(--ink); }
+.mascot { position: relative; width: 150px; height: 150px; margin: 4px auto 0; display: grid; place-items: center; border-radius: 50%;
+  background: rgba(255, 255, 255, .55); box-shadow: 0 0 0 10px rgba(255, 255, 255, .25); animation: bounceIn .8s cubic-bezier(.3, 1.6, .5, 1) both; }
+.mascot .face { font-size: 96px; line-height: 1; display: block; animation: wiggle 2.4s ease-in-out 1s infinite; }
+.mascot.jump .face { animation: jump .5s ease-out; }
+.mascot .crown { position: absolute; top: -26px; left: 50%; font-size: 54px; transform: translateX(-50%) rotate(-10deg); animation: crownDrop .7s cubic-bezier(.3, 1.6, .5, 1) .6s both; }
+.mascot .spark { position: absolute; font-size: 26px; animation: twinkle 1.4s ease-in-out infinite; }
+.mascot .s1 { top: 6px; left: -8px; } .mascot .s2 { top: 40px; right: -16px; animation-delay: .4s; } .mascot .s3 { bottom: 0; left: 8px; animation-delay: .8s; }
+@keyframes bounceIn { from { transform: scale(0) rotate(-30deg); } }
+@keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+@keyframes jump { 40% { transform: translateY(-30px) scale(1.1); } }
+@keyframes crownDrop { from { transform: translate(-50%, -80px) rotate(-30deg); opacity: 0; } }
+@keyframes twinkle { 50% { transform: scale(.5); opacity: .4; } }
+.party-name { font-size: 22px; margin-top: 14px; color: var(--primary-d); animation: rise .5s ease-out .25s both; }
+.party-head { font-size: 32px; line-height: 1.2; margin: 2px 0 6px; text-wrap: balance; animation: rise .5s ease-out .35s both; }
+.party-sub { font-size: 17px; color: #6A4A2A; animation: rise .5s ease-out .45s both; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+.party-stars { display: flex; justify-content: center; gap: 10px; margin: 14px 0 6px; }
+.pstar { font-size: 54px; line-height: 1; color: rgba(255, 255, 255, .55); text-shadow: 0 3px 0 rgba(0, 0, 0, .08); animation: starPop .5s cubic-bezier(.3, 1.8, .5, 1) var(--d) both; }
+.pstar.on { color: #FFC107; text-shadow: 0 3px 0 #D18A00, 0 0 18px rgba(255, 255, 255, .9); }
+.pstar:nth-child(2) { font-size: 68px; transform: translateY(-8px); }
+@keyframes starPop { from { transform: scale(0) rotate(-90deg); opacity: 0; } }
+.party-row { display: flex; align-items: center; gap: 14px; margin: 12px 0; background: rgba(255, 255, 255, .7); border-radius: 22px; padding: 14px; }
+.stamp { flex: 0 0 96px; height: 96px; border-radius: 50%; border: 4px solid var(--red); color: var(--red); display: grid; place-content: center; line-height: 1;
+  transform: rotate(-14deg); font-family: var(--en); animation: stampIn .45s cubic-bezier(.2, 1.4, .4, 1) var(--d) both; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px var(--red); }
+.stamp small { font-size: 12px; font-weight: 600; letter-spacing: 2px; }
+.stamp b { font-size: 34px; font-weight: 600; }
+.stamp span { font-family: var(--font); font-size: 14px; }
+@keyframes stampIn { from { transform: rotate(-14deg) scale(3); opacity: 0; } }
+.party-facts { flex: 1; display: grid; gap: 6px; text-align: left; }
+.party-facts div { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
+.party-facts span { color: var(--muted); }
+.party-facts b { font-weight: 400; }
+.party-facts i { font-style: normal; font-variant-numeric: tabular-nums; }
+.party-words { display: flex; justify-content: center; gap: 6px; margin: 6px 0 12px; }
+.party-words span { width: 44px; height: 44px; border-radius: 14px; background: rgba(255, 255, 255, .75); display: grid; place-items: center; font-size: 24px;
+  animation: starPop .4s ease-out var(--d) both; }
+.party-board { background: rgba(255, 255, 255, .7); border-radius: 22px; padding: 14px; }
+.party-board .stamps { gap: 6px; }
+.party-btns { margin-top: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .party *, .party { animation: none !important; }
+}
+.party-btns { margin: 4px 0 14px; }
+.party-board-t { font-size: 15px; color: var(--muted); margin-bottom: 8px; text-align: left; }

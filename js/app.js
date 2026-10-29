@@ -1,10 +1,12 @@
 // 지후 English — 학생 앱
+// 하루 흐름: 복습 → Day N 단어 7개 반복 학습 → 테스트(4지선다 + 스펠링) 전부 맞히면 통과 → 칭찬 씬
 import { CONFIG } from "./config.js";
 import { DB } from "./db.js";
 import * as S from "./srs.js";
 import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count } from "./audio.js";
 import { canRecognize, listenOnce, scoreSpeech } from "./speech.js";
 import { ask } from "./ui.js";
+import { celebrate } from "./celebrate.js";
 
 const $app = document.getElementById("app");
 const $tabs = document.getElementById("tabs");
@@ -13,7 +15,7 @@ const LSget = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d;
 const LSset = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 const st = {
-  words: [], byId: {}, progress: {}, sessions: [], tab: "home",
+  words: [], byId: {}, progress: {}, sessions: [], days: {}, tab: "home",
   L: null,                 // 진행 중인 학습
   player: new ListenPlayer(), audioSession: null,
   listen: { list: "today", dir: "ek", repeat: 1, rate: 1, example: false, sleepMin: 0 },
@@ -30,15 +32,15 @@ async function boot() {
 
 async function start() {
   try { await DB.loadLearner(); } catch (e) { return renderError(e.message); }
-  const files = CONFIG.WORD_FILES;
   const [lists] = await Promise.all([
-    Promise.all(files.map((f) => fetch(f).then((r) => r.json()))),
+    Promise.all(CONFIG.WORD_FILES.map((f) => fetch(f).then((r) => r.json()))),
     loadAudioManifest(),
   ]);
   st.words = lists.flatMap((l) => l.words);
   st.byId = Object.fromEntries(st.words.map((w) => [w.id, w]));
   st.progress = await DB.loadProgress();
   st.sessions = await DB.loadSessions();
+  st.days = await DB.loadDays();
   st.listen = { ...st.listen, ...(LSget(DB.k("listenOpts"), {})) };
   DB.flush();
   go("home");
@@ -77,10 +79,8 @@ function renderLogin() {
 const today = () => S.todayKST();
 const dayMap = () => S.studyDates(st.sessions);
 const totalXP = () => st.sessions.reduce((a, s) => a + (s.xp || 0), 0);
-const learnedToday = () => S.learnedOn(st.progress, today());
-const target = () => DB.learner.daily_new_target || CONFIG.DAILY_NEW;
-const speakKey = () => DB.k(`speak.${today()}`);
 const syncText = () => DB.mode === "local" ? "📱 체험 모드" : DB.pending() ? `☁️ 전송 대기 ${DB.pending()}` : "☁️ 저장됨";
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function callName() {
   const n = DB.learner.name || "";
@@ -107,10 +107,38 @@ function toast(msg) {
   document.body.appendChild(t); setTimeout(() => t.remove(), 2500);
 }
 
+// ── Day: 하루 7개 묶음 ──
+const dayWords = (d) => st.words.filter((w) => w.day === d);
+const lastDay = () => Math.max(0, ...st.words.map((w) => w.day || 0));
+const dayTheme = (d) => dayWords(d)[0]?.theme || "";
+const passedDays = () => Object.values(st.days).filter((r) => r.status === "passed");
+const passedToday = () => passedDays().find((r) => r.passed_at && S.kstDate(r.passed_at) === today());
+function currentDay() {
+  for (let d = 1; d <= lastDay(); d++) if (st.days[d]?.status !== "passed") return d;
+  return null;
+}
+function dayRec(d) {
+  return st.days[d] ? { ...st.days[d] } : {
+    learner_id: DB.learner.id, day: d, word_ids: dayWords(d).map((w) => w.id), status: "learning",
+    started_at: null, learned_at: null, passed_at: null, test_rounds: 0, first_correct: null, first_total: null,
+    updated_at: S.nowISO(),
+  };
+}
+function saveDay(rec) {
+  rec.updated_at = S.nowISO();
+  st.days[rec.day] = { ...rec };
+  DB.saveDay(rec);
+}
+function reviewDue() {
+  const cur = new Set(dayWords(currentDay() || 0).map((w) => w.id));
+  return S.dueList(st.progress, CONFIG.REVIEW_CAP).filter((p) => !cur.has(p.word_id) && st.byId[p.word_id]);
+}
+
 // ═════════════════════════ 탭 ═════════════════════════
 function go(tab) {
   st.tab = tab;
   if (tab !== "listen" && st.player.state === "idle") stopAll();
+  document.querySelector(".party")?.remove();
   $app.className = "app";
   $tabs.classList.remove("hidden");
   $tabs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
@@ -125,47 +153,69 @@ function statusbar() {
     <span class="sync" id="sync">${syncText()}</span></div>`;
 }
 
+function stampBoard(highlight) {
+  const n = lastDay();
+  return `<div class="stamps">${Array.from({ length: n }, (_, i) => {
+    const d = i + 1, r = st.days[d];
+    const cls = r?.status === "passed" ? (r.first_correct === r.first_total ? "on perfect" : "on") : d === highlight ? "now" : "";
+    return `<span class="${cls}" title="Day ${d}">${r?.status === "passed" ? (r.first_correct === r.first_total ? "💯" : "✔") : d}</span>`;
+  }).join("")}</div>`;
+}
+
 // ── 홈 ───────────────────────────────────────────
 function renderHome() {
-  const due = S.dueList(st.progress, CONFIG.REVIEW_CAP).length;
-  const doneNew = learnedToday().length;
-  const remainingWords = S.nextNewWords(st.words, st.progress, 9999).length;
-  const newLeft = Math.min(Math.max(0, target() - doneNew), remainingWords);
-  const speakDone = !!LSget(speakKey(), false);
-  const needSpeak = !speakDone && (doneNew > 0 || newLeft > 0);
-  const allDone = due === 0 && newLeft === 0 && !needSpeak;
-  const all = Object.values(st.progress);
-  const grad = all.filter((p) => p.box === S.GRAD_BOX).length;
-  const tomorrow = all.filter((p) => p.box < S.GRAD_BOX && p.next_due <= S.todayKST(1)).length;
+  const due = reviewDue().length;
+  const doneRec = passedToday();
+  const d = currentDay();
   const lv = S.levelOf(totalXP());
+  const passed = passedDays().length;
+  let main;
+
+  if (doneRec) {
+    main = `<section class="card mission today-done">
+      <div class="td-medal">🏅</div>
+      <p class="td-title">오늘 Day ${doneRec.day} 통과!</p>
+      <p class="muted">${d ? `내일은 Day ${d} · ${esc(dayTheme(d))} 단어를 만나요` : "30일 단어장을 모두 끝냈어요!"}</p>
+      <div class="stack" style="margin-top:16px">
+        <button class="btn sky" id="toListen">🎧 오늘 단어 듣기</button>
+        ${due ? `<button class="btn ghost" id="revOnly">🔁 복습 ${due}개 하기</button>` : ""}
+      </div></section>`;
+  } else if (!d) {
+    main = `<section class="card mission today-done"><div class="td-medal">👑</div>
+      <p class="td-title">4학년 단어장 완주!</p><p class="muted">${lastDay()}일 동안 ${st.words.length}개를 모두 통과했어요</p>
+      ${due ? `<button class="btn" id="revOnly" style="margin-top:16px">🔁 복습 ${due}개 하기</button>` : ""}</section>`;
+  } else {
+    const rec = dayRec(d), ws = dayWords(d);
+    const learned = rec.status !== "learning";
+    main = `<section class="card mission">
+      <div class="day-head"><span class="day-badge">Day ${d}</span><span class="day-theme">${esc(dayTheme(d))}</span></div>
+      <div class="chips7">${ws.map((w) => `<span title="${esc(w.word)}">${w.emoji}</span>`).join("")}</div>
+      <ul class="steps">
+        <li class="${due === 0 ? "done" : ""}"><span class="ic">🔁</span>지난 단어 복습<span class="num">${due ? due + "개" : ""}</span></li>
+        <li class="${learned ? "done" : ""}"><span class="ic">✨</span>오늘 단어 ${ws.length}개 반복 학습<span class="num"></span></li>
+        <li><span class="ic">📝</span>테스트 모두 맞히기<span class="num">${rec.test_rounds ? `도전 ${rec.test_rounds}번` : ""}</span></li>
+      </ul>
+      <button class="btn" id="startL">${learned ? "테스트 도전 ▶" : rec.started_at ? "이어서 하기 ▶" : "오늘 학습 시작 ▶"}</button>
+      ${learned ? `<button class="btn ghost small" id="reLearn" style="margin-top:12px">단어 한 번 더 연습하고 테스트</button>` : ""}
+    </section>`;
+  }
 
   $app.innerHTML = `${statusbar()}
     <h1>${esc(callName())}, 안녕! 👋</h1>
     <p class="muted">레벨 ${lv} · 다음 레벨까지 ⭐ ${lv * 200 - totalXP()}</p>
-    <section class="card mission">
-      <p style="font-size:19px">${allDone ? "오늘 미션 완료! 🎉" : "오늘의 미션"}</p>
-      <ul class="steps">
-        <li class="${due === 0 ? "done" : ""}"><span class="ic">🔁</span>복습하기<span class="num">${due ? due + "개" : ""}</span></li>
-        <li class="${newLeft === 0 ? "done" : ""}"><span class="ic">✨</span>새 단어 배우기<span class="num">${doneNew}/${target()}</span></li>
-        <li class="${needSpeak ? "" : "done"}"><span class="ic">🎤</span>말하기 미션<span class="num"></span></li>
-      </ul>
-      ${allDone
-        ? `<button class="btn sky" id="toListen">🎧 듣기로 한 번 더 복습</button>`
-        : `<button class="btn" id="startL">오늘 학습 시작 ▶</button>`}
-    </section>
-    <section class="stat3">
-      <div class="card"><b>${all.length}</b><span>배운 단어</span></div>
-      <div class="card"><b>${grad}</b><span>졸업 🎓</span></div>
-      <div class="card"><b>${tomorrow}</b><span>내일 복습</span></div>
-    </section>
-    ${remainingWords === 0 ? `<p class="note">단어장의 단어를 모두 배웠어요! 부모님께 새 단어장을 부탁해요 📚</p>` : ""}`;
-  document.getElementById("startL")?.addEventListener("click", startLesson);
-  document.getElementById("toListen")?.addEventListener("click", () => go("listen"));
+    ${main}
+    <h2>도장판 <small class="muted" style="font-size:15px">${passed}/${lastDay()} Day</small></h2>
+    <div class="card">${stampBoard(d)}</div>`;
+  document.getElementById("startL")?.addEventListener("click", () => startToday());
+  document.getElementById("reLearn")?.addEventListener("click", () => startToday({ relearn: true }));
+  document.getElementById("revOnly")?.addEventListener("click", () => startToday({ reviewOnly: true }));
+  document.getElementById("toListen")?.addEventListener("click", () => { st.listen.list = "today"; go("listen"); });
 }
 
-// ═════════════════════════ 학습 ═════════════════════════
-const spellable = (w) => w.type === "word" && /^[a-z]+$/.test(w.word) && w.word.length <= 8;
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+// ═════════════════════════ 학습 엔진 ═════════════════════════
+// 철자 문제로 낼 수 있는지: 알파벳·띄어쓰기만, 글자 10개 이하
+const letterCount = (w) => w.word.replace(/ /g, "").length;
+const spellable = (w) => /^[A-Za-z ]+$/.test(w.word) && letterCount(w) <= 10;
 
 function reviewMode(p, w) {
   const opts = p.box <= 2 ? ["listen_pick", "meaning_pick"]
@@ -174,62 +224,59 @@ function reviewMode(p, w) {
   return pick(opts);
 }
 
-function startLesson() {
-  const due = S.dueList(st.progress, CONFIG.REVIEW_CAP);
-  const doneNew = learnedToday();
-  const fresh = S.nextNewWords(st.words, st.progress, target() - doneNew.length);
-  const speakDone = !!LSget(speakKey(), false);
-  const steps = [];
-
-  if (due.length) {
-    steps.push({ type: "phase", emoji: "🔁", title: "복습 시간", sub: `전에 배운 단어 ${due.length}개를 다시 만나요` });
-    S.shuffle(due).forEach((p) => { const w = st.byId[p.word_id]; if (w) steps.push({ type: "review", id: w.id, mode: reviewMode(p, w) }); });
+function startToday(opts = {}) {
+  const phases = [];
+  const due = reviewDue();
+  const d = currentDay();
+  if (due.length) phases.push(() => reviewPhase(due));
+  if (!opts.reviewOnly && d && !passedToday()) {
+    const rec = dayRec(d);
+    if (!rec.started_at) { rec.started_at = S.nowISO(); saveDay(rec); }
+    if (rec.status === "learning" || opts.relearn) phases.push(() => learnPhase(d, !!opts.relearn));
+    phases.push(() => testPhase(d));
   }
-  if (fresh.length) {
-    steps.push({ type: "phase", emoji: "✨", title: "새 단어 " + fresh.length + "개", sub: "잘 듣고, 따라 말해 봐요" });
-    fresh.forEach((w) => steps.push({ type: "intro", id: w.id }));
-    S.shuffle(fresh).forEach((w) => steps.push({ type: "quiz", id: w.id, mode: "listen_pick" }));
-    S.shuffle(fresh).forEach((w) => steps.push({ type: "quiz", id: w.id, mode: "meaning_pick" }));
-    S.shuffle(fresh.filter(spellable)).forEach((w) => steps.push({ type: "quiz", id: w.id, mode: "spell" }));
-  }
-  if (!speakDone && (fresh.length || doneNew.length)) {
-    const pool = (fresh.length ? fresh : doneNew.map((p) => st.byId[p.word_id])).filter(Boolean);
-    const chosen = S.shuffle(pool).slice(0, 2);
-    if (chosen.length) {
-      steps.push({ type: "phase", emoji: "🎤", title: "말하기 미션", sub: "문장으로 말해 봐요" });
-      chosen.forEach((w) => steps.push({ type: "chunk", id: w.id }));
-    }
-  }
-  if (!steps.length) return renderHome();
-  steps.push({ type: "done" });
-
-  st.L = { steps, i: 0, session: newSession(fresh.length ? "lesson" : "review"), retried: new Set(), newCount: fresh.length };
+  if (!phases.length) return renderHome();
+  st.L = { session: newSession(opts.reviewOnly ? "review" : "lesson"), phases, p: -1, steps: [], i: 0, label: "", combo: 0 };
   saveSess(st.L.session);
   $tabs.classList.add("hidden");
   $app.className = "app focus";
+  nextPhase();
+}
+
+function nextPhase() {
+  const L = st.L;
+  L.p++;
+  if (L.p >= L.phases.length) return finishReviewOnly();
+  L.phases[L.p]();
+}
+function runSteps(label, steps, onDone) {
+  Object.assign(st.L, { label, steps, i: 0, onDone });
   renderStep();
+}
+function nextStep() {
+  document.querySelector(".feedback")?.remove();
+  clearTimeout(st.L?.auto); clearTimeout(st.L?.sayT);
+  const L = st.L;
+  L.i++;
+  if (L.i >= L.steps.length) return (L.onDone || nextPhase)();
+  renderStep();
+}
+function renderStep() {
+  const step = st.L.steps[st.L.i];
+  const w = st.byId[step.id];
+  ({ phase: stepPhase, intro: stepIntro, practice: stepQuiz, test: stepQuiz, review: stepQuiz, quiz: stepQuiz,
+     testintro: stepTestIntro })[step.type](step, w);
 }
 
 function lessonFrame(inner) {
   const L = st.L;
-  const pct = Math.round((L.i / (L.steps.length - 1)) * 100);
+  const pct = Math.round((L.i / Math.max(1, L.steps.length)) * 100);
   $app.innerHTML = `<div class="lesson-top"><button class="x-btn" id="quit" aria-label="그만하기">✕</button>
-    <div class="bar"><i style="width:${pct}%"></i></div></div><div id="stage">${inner}</div>`;
+    <div class="bar"><i style="width:${pct}%"></i></div><span class="phase-chip">${esc(L.label)}</span></div>
+    <div id="stage">${inner}</div>`;
   document.getElementById("quit").onclick = async () => {
-    if (await ask("그만할까요? 지금까지 한 것은 저장돼요.", "그만하기", "계속하기")) endLesson(false);
+    if (await ask("그만할까요? 지금까지 한 것은 저장돼요.", "그만하기", "계속하기")) endLesson();
   };
-}
-
-function nextStep() {
-  document.querySelector(".feedback")?.remove();
-  st.L.i++;
-  renderStep();
-}
-
-function renderStep() {
-  const step = st.L.steps[st.L.i];
-  const w = st.byId[step.id];
-  ({ phase: stepPhase, intro: stepIntro, quiz: stepQuiz, review: stepQuiz, chunk: stepChunk, done: stepDone })[step.type](step, w);
 }
 
 function stepPhase(step) {
@@ -238,19 +285,45 @@ function stepPhase(step) {
   document.getElementById("go").onclick = nextStep;
 }
 
-// ── 새 단어 소개 ──
+// ── 1. 복습 ──
+function reviewPhase(due) {
+  const steps = [{ type: "phase", emoji: "🔁", title: "복습 시간", sub: `전에 배운 단어 ${due.length}개를 다시 만나요` }];
+  S.shuffle(due).forEach((p) => { const w = st.byId[p.word_id]; steps.push({ type: "review", id: w.id, mode: reviewMode(p, w) }); });
+  runSteps("복습", steps, nextPhase);
+}
+
+// ── 2. 오늘 단어 반복 학습 ──
+function learnPhase(d, relearn) {
+  const ws = dayWords(d);
+  const steps = [];
+  if (!relearn) {
+    steps.push({ type: "phase", emoji: "✨", title: `Day ${d} · ${dayTheme(d)}`, sub: `오늘의 단어 ${ws.length}개를 만나요` });
+    ws.forEach((w) => steps.push({ type: "intro", id: w.id }));
+  }
+  steps.push({ type: "phase", emoji: "🔁", title: "반복 연습", sub: "모두 맞힐 때까지 연습해요. 틀려도 괜찮아요!" });
+  for (const mode of ["listen_pick", "meaning_pick", "spell"]) {
+    S.shuffle(ws.filter((w) => mode !== "spell" || spellable(w))).forEach((w) => steps.push({ type: "practice", id: w.id, mode }));
+  }
+  runSteps("반복 학습", steps, () => {
+    const rec = dayRec(d);
+    if (rec.status === "learning") { rec.status = "testing"; rec.learned_at = S.nowISO(); saveDay(rec); }
+    nextPhase();
+  });
+}
+
 function stepIntro(step, w) {
-  // 처음 보는 순간 진도에 등록 → 중간에 그만둬도 내일 복습에 나옴
+  // 처음 보는 순간 진도에 등록 → 중간에 그만둬도 복습에 나옴
   if (!st.progress[w.id]) {
     const p = S.newProgress(DB.learner.id, w.id);
     st.progress[w.id] = p; DB.saveProgress(p);
-    st.L.session.new_words++; st.L.session.xp += 10; saveSess(st.L.session);
+    st.L.session.new_words++; st.L.session.xp += 5; saveSess(st.L.session);
   }
   const en = S.spoken(w);
-  lessonFrame(`<p class="phase">새 단어</p>
+  const n = st.L.steps.filter((s) => s.type === "intro").indexOf(step) + 1;
+  lessonFrame(`<p class="phase">새 단어 ${n}/${st.L.steps.filter((s) => s.type === "intro").length}${w.type === "idiom" ? " · 숙어" : ""}</p>
     <div class="card wordcard">
       <div class="emoji">${w.emoji}</div>
-      <div class="word ${en.length > 12 ? "long" : ""}">${esc(en)}</div>
+      <div class="word ${en.length > 10 ? "long" : ""}">${esc(en)}</div>
       <div class="meaning">${esc(w.meaning)}</div>
       <div style="margin-top:14px"><button class="speaker" id="spk">🔊</button></div>
       <div class="ex"><div class="en">${esc(w.example)}</div><div class="ko">${esc(w.example_ko)}</div></div>
@@ -263,42 +336,98 @@ function stepIntro(step, w) {
   play();
   document.getElementById("spk").onclick = play;
   document.getElementById("go").onclick = () => { stopAll(); nextStep(); };
-  document.getElementById("mic").onclick = () => speakAttempt(w, en, "speak", false);
+  document.getElementById("mic").onclick = () => speakAttempt(w, en);
 }
 
-// 말하기 공통 — 인식이 되면 별점, 안 되면 스스로 체크
-async function speakAttempt(w, targetText, mode, affectsProgress) {
+// 따라 말하기 — 인식이 되면 별점, 안 되면 칭찬만
+async function speakAttempt(w, targetText) {
   const stars = document.getElementById("stars"), heard = document.getElementById("heard"), mic = document.getElementById("mic");
-  if (!canRecognize || st.srBroken) {
-    stars.textContent = "👏"; heard.textContent = "소리 내어 말해 봤죠? 잘했어요!";
-    return null;
-  }
+  if (!canRecognize || st.srBroken) { stars.textContent = "👏"; heard.textContent = "소리 내어 말해 봤죠? 잘했어요!"; return; }
   stopAll();
   mic.classList.add("on"); heard.textContent = "듣고 있어요… 말해 보세요!";
   try {
-    const alts = await listenOnce();
-    const r = scoreSpeech(targetText, alts);
+    const r = scoreSpeech(targetText, await listenOnce());
     stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
     heard.textContent = `"${r.transcript}" 라고 들렸어요`;
-    record(w, { mode, correct: r.score >= 2, score: r.score, transcript: r.transcript, affectsProgress });
+    record(w, { mode: "speak", phase: "practice", correct: r.score >= 2, score: r.score, transcript: r.transcript });
     if (r.score >= 2) fx("ok");
-    return r;
   } catch (e) {
     if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
-      st.srBroken = true;
-      heard.textContent = "마이크/받아쓰기가 꺼져 있어요. 소리 내어 말해 보기만 해도 돼요!";
+      st.srBroken = true; heard.textContent = "마이크가 꺼져 있어요. 소리 내어 말해 보기만 해도 돼요!";
     } else heard.textContent = "잘 안 들렸어요. 한 번 더 눌러 볼까요?";
-    return null;
   } finally { mic.classList.remove("on"); }
 }
 
-// ── 퀴즈 (새 단어 연습 + 복습) ──
+// ── 3. 테스트 ──
+function testPhase(d) {
+  const ws = dayWords(d);
+  const choice = S.shuffle(ws).map((w, i) => ({ type: "test", id: w.id, mode: i % 2 ? "listen_pick" : "meaning_pick", part: 1 }));
+  const spell = S.shuffle(ws).map((w) => ({ type: "test", id: w.id, mode: spellable(w) ? "spell" : "listen_pick", part: 2 }));
+  st.L.test = { day: d, results: [], total: choice.length + spell.length };
+  const steps = [{ type: "testintro", day: d, n1: choice.length, n2: spell.length }, ...choice,
+    { type: "phase", emoji: "🔤", title: "2부 · 스펠링", sub: "알파벳을 하나씩 눌러 단어를 완성해요" }, ...spell];
+  runSteps(`Day ${d} 테스트`, steps, () => testRoundEnd(d));
+}
+
+function stepTestIntro(step) {
+  const rec = dayRec(step.day);
+  lessonFrame(`<div class="celebrate"><div class="big">📝</div><h1>Day ${step.day} 테스트</h1>
+    <p class="muted" style="margin:6px 0 18px">모두 맞히면 오늘 단어 통과!</p>
+    <div class="card test-rules">
+      <div><b>1부</b> 4지선다 ${step.n1}문제</div>
+      <div><b>2부</b> 스펠링 ${step.n2}문제</div>
+      <div class="muted">힌트는 없어요. 틀린 문제는 다시 도전할 수 있어요</div>
+    </div>
+    ${rec.test_rounds ? `<p class="muted" style="margin:12px 0 0">지난번에 ${rec.test_rounds}번 도전했어요. 이번엔 할 수 있어!</p>` : ""}
+    <button class="btn" id="go" style="margin-top:22px">테스트 시작!</button></div>`);
+  document.getElementById("go").onclick = nextStep;
+}
+
+function testRoundEnd(d) {
+  const L = st.L, T = L.test;
+  const rec = dayRec(d);
+  const correct = T.results.filter((r) => r.ok).length;
+  const wrong = T.results.filter((r) => !r.ok).map((r) => r.q);
+  rec.test_rounds = (rec.test_rounds || 0) + 1;
+  if (rec.first_total == null) { rec.first_total = T.results.length; rec.first_correct = correct; }
+  if (rec.status === "learning") { rec.status = "testing"; rec.learned_at = rec.learned_at || S.nowISO(); }
+
+  if (!wrong.length) {
+    const perfect = rec.first_correct === rec.first_total;
+    rec.status = "passed"; rec.passed_at = S.nowISO();
+    saveDay(rec);
+    const bonus = 50 + (perfect ? 30 : 0);
+    L.session.xp += bonus; L.session.ended_at = S.nowISO(); saveSess(L.session);
+    DB.flush();
+    return celebrate({
+      name: callName(), day: d, theme: dayTheme(d), perfect, rounds: rec.test_rounds,
+      firstCorrect: rec.first_correct, total: rec.first_total, xp: bonus,
+      words: dayWords(d), stamps: stampBoard(), say: sayText, fx,
+      onHome: () => endLesson(), onListen: () => { endLesson(false); st.listen.list = "today"; go("listen"); },
+    });
+  }
+  saveDay(rec);
+  const ws = [...new Set(wrong.map((q) => q.id))].map((id) => st.byId[id]);
+  lessonFrame(`<div class="celebrate"><div class="big">💪</div>
+    <h1>${correct}개 맞았어요!</h1>
+    <p class="muted" style="margin:6px 0 16px">틀린 <b style="color:var(--primary-d)">${wrong.length}문제</b>만 다시 맞히면 통과예요</p>
+    <div class="wlist" style="text-align:left">${ws.map((w) => `<button class="wrow" data-id="${w.id}"><span class="em">${w.emoji}</span>
+      <span><div class="w">${esc(S.spoken(w))}</div><div class="m">${esc(w.meaning)}</div></span><span class="bx" style="background:var(--sky)">🔊</span></button>`).join("")}</div>
+    <p class="muted" style="font-size:14px;margin:10px 0 18px">단어를 눌러 한 번 더 들어 보세요</p>
+    <button class="btn" id="again">다시 도전!</button></div>`);
+  document.querySelectorAll(".wrow").forEach((b) => (b.onclick = () => say(st.byId[b.dataset.id], "ek")));
+  document.getElementById("again").onclick = () => {
+    T.results = [];
+    runSteps(`Day ${d} 재도전`, S.shuffle(wrong).map((q) => ({ ...q, retryRound: true })), () => testRoundEnd(d));
+  };
+}
+
+// ═════════════════════════ 문제 화면 ═════════════════════════
 function distractors(w, n = 3) {
-  const same = st.words.filter((x) => x.id !== w.id && x.type === w.type);
-  const other = st.words.filter((x) => x.id !== w.id && x.type !== w.type);
-  const sameTheme = S.shuffle(same.filter((x) => x.theme === w.theme)).slice(0, 1);
+  const others = st.words.filter((x) => x.id !== w.id);
+  const sameDay = S.shuffle(others.filter((x) => x.day === w.day)).slice(0, 2);
   const out = [];
-  for (const x of [...sameTheme, ...S.shuffle(same), ...S.shuffle(other)]) {
+  for (const x of [...sameDay, ...S.shuffle(others.filter((x) => x.type === w.type)), ...S.shuffle(others)]) {
     if (out.length >= n) break;
     if ([w, ...out].some((y) => y.emoji === x.emoji || y.meaning === x.meaning || S.spoken(y) === S.spoken(x))) continue;
     out.push(x);
@@ -306,14 +435,20 @@ function distractors(w, n = 3) {
   return out;
 }
 
+function phaseLabel(step) {
+  if (step.type === "test") return `${step.part === 2 ? "2부 · 스펠링" : "1부 · 4지선다"}${step.retryRound ? " · 재도전" : ""}`;
+  if (step.type === "review" || step.type === "quiz") return `복습${step.retry ? " · 다시 도전" : ""}`;
+  return `연습${step.again ? " · 한 번 더" : ""}`;
+}
+
 function stepQuiz(step, w) {
-  const mode = step.mode;
-  if (mode === "spell") return quizSpell(step, w);
-  if (mode === "speak") return quizSpeak(step, w);
+  if (step.mode === "spell") return quizSpell(step, w);
+  if (step.mode === "speak") return quizSpeak(step, w);
+  const isTest = step.type === "test";
   const opts = S.shuffle([w, ...distractors(w)]);
-  const listen = mode === "listen_pick";
+  const listen = step.mode === "listen_pick";
   const head = listen
-    ? `<p class="prompt">잘 듣고 알맞은 것을 골라요</p>
+    ? `<p class="prompt">잘 듣고 알맞은 뜻을 골라요</p>
        <div style="text-align:center;margin-bottom:22px"><button class="speaker big" id="spk">🔊</button></div>`
     : `<p class="prompt">영어로 뭐라고 할까요?</p>
        <div class="card wordcard" style="padding:18px;margin-bottom:18px"><div class="emoji" style="font-size:64px">${w.emoji}</div>
@@ -321,16 +456,16 @@ function stepQuiz(step, w) {
   const optHtml = opts.map((o) => listen
     ? `<button class="opt" data-id="${o.id}"><span class="em">${o.emoji}</span>${esc(o.meaning)}</button>`
     : `<button class="opt en" data-id="${o.id}">${esc(S.spoken(o))}</button>`).join("");
-  lessonFrame(`<p class="phase">${step.type === "review" ? "복습" : "연습"}${step.retry ? " · 다시 도전" : ""}</p>${head}
-    <div class="options ${!listen && opts.some((o) => S.spoken(o).length > 14) ? "one-col" : ""}">${optHtml}</div>
-    <div style="text-align:center;margin-top:18px"><button class="hint-btn" id="hint">💡 힌트</button></div>`);
+  lessonFrame(`<p class="phase">${phaseLabel(step)}</p>${head}
+    <div class="options ${!listen && opts.some((o) => S.spoken(o).length > 11) ? "one-col" : ""}">${optHtml}</div>
+    ${isTest ? "" : `<div style="text-align:center;margin-top:18px"><button class="hint-btn" id="hint">💡 힌트</button></div>`}`);
 
   let hint = false, answered = false;
   if (listen) { say(w, "w"); document.getElementById("spk").onclick = () => say(w, "w"); }
-  document.getElementById("hint").onclick = (e) => {
+  document.getElementById("hint")?.addEventListener("click", (e) => {
     hint = true; e.currentTarget.remove();
     S.shuffle([...document.querySelectorAll(".opt")].filter((b) => b.dataset.id !== w.id)).slice(0, 2).forEach((b) => b.classList.add("gone"));
-  };
+  });
   document.querySelectorAll(".opt").forEach((b) => (b.onclick = () => {
     if (answered) return; answered = true;
     const ok = b.dataset.id === w.id;
@@ -340,33 +475,49 @@ function stepQuiz(step, w) {
   }));
 }
 
+const DECOY = "abcdefghiklmnoprstuwy";
 function quizSpell(step, w) {
-  const letters = w.word.split("");
-  const tiles = S.shuffle(letters.map((ch, i) => ({ ch, i })));
-  const slots = Array(letters.length).fill(null); // {tile, fixed}
+  const isTest = step.type === "test";
+  const letters = w.word.split("");                       // 띄어쓰기 포함
+  const pos = letters.map((ch, i) => (ch === " " ? -1 : i)).filter((i) => i >= 0); // 글자 칸 위치
+  const need = pos.map((i) => letters[i]);
+  const decoys = isTest && need.length >= 3
+    ? Array.from({ length: 2 }, () => DECOY[Math.floor(Math.random() * DECOY.length)]) : [];
+  const tiles = S.shuffle([...need, ...decoys].map((ch) => ({ ch })));
+  const slots = Array(need.length).fill(null);              // {tile, fixed}
   let hint = false, answered = false;
-  lessonFrame(`<p class="phase">${step.type === "review" ? "복습" : "연습"} · 철자</p><p class="prompt">글자를 순서대로 눌러요</p>
+  const small = need.length > 7 ? "sm" : "";
+  lessonFrame(`<p class="phase">${phaseLabel(step)}</p><p class="prompt">알파벳을 순서대로 눌러요</p>
     <div class="card wordcard" style="padding:16px"><div class="emoji" style="font-size:56px">${w.emoji}</div>
       <div class="meaning">${esc(w.meaning)}</div>
       <div style="margin-top:10px"><button class="speaker" id="spk">🔊</button></div></div>
-    <div class="slots" id="slots"></div><div class="tiles" id="tiles"></div>
-    <div style="text-align:center;margin-top:20px"><button class="hint-btn" id="hint">💡 한 글자 보기</button></div>`);
+    <div class="slots ${small}" id="slots"></div><div class="tiles ${small}" id="tiles"></div>
+    <div class="spell-tools">
+      <button class="hint-btn" id="undo">⌫ 지우기</button>
+      ${isTest ? "" : `<button class="hint-btn" id="hint">💡 한 글자 보기</button>`}
+    </div>`);
   say(w, "w");
   document.getElementById("spk").onclick = () => say(w, "w");
   const $s = document.getElementById("slots"), $t = document.getElementById("tiles");
   const draw = () => {
-    $s.innerHTML = slots.map((s, i) => `<button class="slot ${s?.fixed ? "fixed" : ""}" data-i="${i}">${s ? tiles[s.tile].ch : ""}</button>`).join("");
+    let k = 0;
+    $s.innerHTML = letters.map((ch) => {
+      if (ch === " ") return `<span class="slot-gap"></span>`;
+      const i = k++, s = slots[i];
+      return `<button class="slot ${s?.fixed ? "fixed" : ""} ${!s && slots.findIndex((x) => !x) === i ? "next" : ""}" data-i="${i}">${s ? tiles[s.tile].ch : ""}</button>`;
+    }).join("");
     const used = new Set(slots.filter(Boolean).map((s) => s.tile));
     $t.innerHTML = tiles.map((t, i) => `<button class="tile ${used.has(i) ? "used" : ""}" data-t="${i}">${t.ch}</button>`).join("");
   };
   const check = () => {
     if (slots.some((s) => !s) || answered) return;
     answered = true;
-    const ok = slots.map((s) => tiles[s.tile].ch).join("") === w.word;
-    answer(step, w, ok, hint);
+    const ok = slots.map((s) => tiles[s.tile].ch).join("") === need.join("");
+    document.querySelectorAll(".slot").forEach((el) => el.classList.add(ok ? "good" : "bad"));
+    setTimeout(() => answer(step, w, ok, hint), ok ? 250 : 450);
   };
   $t.onclick = (e) => {
-    const b = e.target.closest(".tile"); if (!b || answered) return;
+    const b = e.target.closest(".tile"); if (!b || answered || b.classList.contains("used")) return;
     const i = slots.findIndex((s) => !s); if (i < 0) return;
     slots[i] = { tile: +b.dataset.t }; draw(); check();
   };
@@ -374,20 +525,25 @@ function quizSpell(step, w) {
     const b = e.target.closest(".slot"); if (!b || answered) return;
     const i = +b.dataset.i; if (slots[i] && !slots[i].fixed) { slots[i] = null; draw(); }
   };
-  document.getElementById("hint").onclick = () => {
+  document.getElementById("undo").onclick = () => {
+    if (answered) return;
+    for (let i = slots.length - 1; i >= 0; i--) if (slots[i] && !slots[i].fixed) { slots[i] = null; break; }
+    draw();
+  };
+  document.getElementById("hint")?.addEventListener("click", () => {
     if (answered) return;
     hint = true;
-    const i = slots.findIndex((s, k) => !s || tiles[s.tile].ch !== letters[k]);
+    const i = slots.findIndex((s, k) => !s || tiles[s.tile].ch !== need[k]);
     if (i < 0) return;
-    // i 번째 칸에 맞는 글자를 고정 (다른 칸에 쓰인 같은 글자 타일은 비움)
+    if (slots[i]) slots[i] = null;
     const used = new Set(slots.filter(Boolean).map((s) => s.tile));
-    let t = tiles.findIndex((x, k) => x.ch === letters[i] && !used.has(k));
+    let t = tiles.findIndex((x, k) => x.ch === need[i] && !used.has(k));
     if (t < 0) {
-      const k = slots.findIndex((s, j) => s && !s.fixed && j !== i && tiles[s.tile].ch === letters[i]);
+      const k = slots.findIndex((s, j) => s && !s.fixed && j !== i && tiles[s.tile].ch === need[i]);
       t = slots[k].tile; slots[k] = null;
     }
     slots[i] = { tile: t, fixed: true }; draw(); check();
-  };
+  });
   draw();
 }
 
@@ -429,8 +585,7 @@ function quizSpeak(step, w) {
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
     mic.classList.add("on"); heard.textContent = "듣고 있어요…";
     try {
-      const alts = await listenOnce();
-      const r = scoreSpeech(en, alts);
+      const r = scoreSpeech(en, await listenOnce());
       tries++;
       stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
       heard.textContent = `"${r.transcript}" 라고 들렸어요`;
@@ -446,31 +601,8 @@ function quizSpeak(step, w) {
   };
 }
 
-// ── 말하기 미션 (문장) ──
-function stepChunk(step, w) {
-  const target = (w.example.match(/^[^.?!]+[.?!]/) || [w.example])[0];
-  const key = S.spoken(w).replace(/[.?!]$/, "");
-  const shown = esc(target).replace(esc(key), `<b>${esc(key)}</b>`);
-  lessonFrame(`<p class="phase">말하기 미션</p><p class="prompt">이 문장을 말해 보세요</p>
-    <div class="card wordcard" style="padding:18px"><div class="emoji" style="font-size:56px">${w.emoji}</div>
-      <div class="pattern">${shown}</div><div class="muted">${esc(w.example_ko)}</div>
-      <div style="margin-top:12px"><button class="speaker" id="spk">🔊</button></div></div>
-    <button class="mic" id="mic">🎤</button><div class="stars" id="stars"></div><div class="heard" id="heard">먼저 듣고, 버튼을 눌러 말해요</div>
-    <button class="btn" id="go" style="margin-top:12px">다음 ▶</button>`);
-  const play = () => sayText(target);
-  play();
-  document.getElementById("spk").onclick = play;
-  document.getElementById("mic").onclick = async () => {
-    const r = await speakAttempt(w, target, "chunk_speak", false);
-    if (r === null && (!canRecognize || st.srBroken)) record(w, { mode: "chunk_speak", correct: true, affectsProgress: false });
-    if (r && r.score >= 1) { st.L.session.xp += r.score * 2; saveSess(st.L.session); }
-    LSset(speakKey(), true);
-  };
-  document.getElementById("go").onclick = () => { LSset(speakKey(), true); stopAll(); nextStep(); };
-}
-
-// ── 결과 기록 ──
-function record(w, { mode, correct, hint = false, score = null, transcript = null, affectsProgress, review = false }) {
+// ═════════════════════════ 채점 · 기록 ═════════════════════════
+function record(w, { mode, phase, correct, hint = false, score = null, transcript = null, review = false }) {
   const L = st.L;
   const p = st.progress[w.id];
   const before = p?.box ?? null;
@@ -478,12 +610,12 @@ function record(w, { mode, correct, hint = false, score = null, transcript = nul
   if (p && review) {
     const np = S.applyResult(p, correct ? (hint ? "hint" : "correct") : "wrong");
     st.progress[w.id] = np; DB.saveProgress(np); after = np.box;
-  } else if (p && affectsProgress) {
+  } else if (p && mode !== "speak") {
     const np = { ...p, correct_count: p.correct_count + (correct ? 1 : 0), wrong_count: p.wrong_count + (correct ? 0 : 1), last_reviewed_at: S.nowISO() };
     st.progress[w.id] = np; DB.saveProgress(np);
   }
   DB.logAnswer({
-    client_id: S.uuid(), session_id: L.session.id, learner_id: DB.learner.id, word_id: w.id, mode,
+    client_id: S.uuid(), session_id: L.session.id, learner_id: DB.learner.id, word_id: w.id, mode, phase,
     is_correct: !!correct, hint_used: !!hint, speak_score: score, transcript,
     box_before: before, box_after: after, answered_at: S.nowISO(),
   });
@@ -492,52 +624,65 @@ function record(w, { mode, correct, hint = false, score = null, transcript = nul
   return { before, after };
 }
 
-const PRAISE = ["잘했어요! 🎉", "정답! 👍", "멋져요! ✨", "최고예요! 🌟", "완벽해요! 💯"];
+const PRAISE = ["잘했어요! 🎉", "정답! 👍", "멋져요! ✨", "최고예요! 🌟", "완벽해요! 💯", "천재인데? 🧠", "바로 그거야! 🙌"];
+const COMBO = { 3: "3연속 정답! 🔥", 5: "5연속! 멈출 수 없어! 🚀", 7: "7연속! 영어 천재 등장! 👑", 10: "10연속!! 대단해! 🏆" };
+
 function answer(step, w, ok, hint, extra = {}) {
   const L = st.L;
+  const phase = step.type === "test" ? "test" : (step.type === "review" || step.type === "quiz") ? "review" : "practice";
   const isReview = step.type === "review" && !step.retry;
-  const { before, after } = record(w, { mode: step.mode, correct: ok, hint, review: isReview, affectsProgress: !step.retry, ...extra });
+  const { before, after } = record(w, { mode: step.mode, phase, correct: ok, hint, review: isReview, ...extra });
   if (isReview) L.session.reviewed_words++;
-  if (ok) { L.session.correct++; L.session.xp += hint ? 3 : 5; }
+  if (ok) { L.session.correct++; L.session.xp += step.type === "test" ? 5 : hint ? 1 : 2; }
   saveSess(L.session);
-  // 틀린 문제는 마지막에 한 번 더 (기록은 남기되 상자는 이미 반영됨)
-  if (!ok && !step.retry && !L.retried.has(w.id + step.mode)) {
-    L.retried.add(w.id + step.mode);
-    const mode = step.mode === "speak" ? "meaning_pick" : step.mode;
-    L.steps.splice(L.steps.length - 1, 0, { type: "quiz", id: w.id, mode, retry: true });
+  L.combo = ok && !hint ? (L.combo || 0) + 1 : 0;
+
+  let note = "";
+  if (step.type === "test") {
+    L.test.results.push({ q: step, ok });
+  } else if (step.type === "practice" && (!ok || hint)) {
+    // 반복 학습: 틀리거나 힌트를 쓴 단어는 조금 뒤에 다시 나옴 (맞힐 때까지)
+    const at = Math.min(L.steps.length, L.i + 4);
+    L.steps.splice(at, 0, { ...step, again: true });
+    note = ok ? "조금 뒤에 힌트 없이 한 번 더!" : "괜찮아요! 조금 뒤에 다시 나와요";
+  } else if (!ok && step.type === "review" && !step.retry) {
+    L.steps.push({ type: "quiz", id: w.id, mode: step.mode === "speak" ? "meaning_pick" : step.mode, retry: true });
   }
   ok ? fx("ok") : fx("no");
+
   let boxMsg = "";
   if (isReview && after !== before) boxMsg = after === S.GRAD_BOX ? " · 졸업! 🎓" : after > before ? ` · 상자 ${after}로 ⬆️` : ` · 상자 ${after}로`;
+  const combo = ok && COMBO[L.combo] ? `<div class="combo">${COMBO[L.combo]}</div>` : "";
   const fb = document.createElement("div");
   fb.className = `feedback ${ok ? "ok" : "no"}`;
-  fb.innerHTML = `<div class="inner"><div class="msg">${ok ? (hint ? "힌트로 맞혔어요! 💡" : pick(PRAISE)) : "아쉬워요! 다시 기억해요"}${boxMsg}</div>
+  fb.innerHTML = `<div class="inner">${combo}<div class="msg">${ok ? (hint ? "힌트로 맞혔어요! 💡" : pick(PRAISE)) : "아쉬워요! 정답은 이거예요"}${boxMsg}</div>
     <div class="ans"><span class="en">${esc(S.spoken(w))}</span> ${w.emoji} ${esc(w.meaning)}</div>
+    ${note ? `<div class="muted" style="margin:-6px 0 12px;font-size:15px">${note}</div>` : ""}
     <button class="btn ${ok ? "mint" : ""}" id="cont">계속</button></div>`;
   document.body.appendChild(fb);
-  if (!extra.quiet) setTimeout(() => say(w, "w"), 250);
+  if (!extra.quiet) L.sayT = setTimeout(() => say(w, "w"), 250);
   fb.querySelector("#cont").onclick = () => { stopAll(); nextStep(); };
+  // 테스트에서 맞히면 자동으로 다음 문제 (리듬감)
+  if (step.type === "test" && ok) L.auto = setTimeout(() => { if (document.body.contains(fb)) { stopAll(); nextStep(); } }, 1400);
 }
 
-function stepDone() {
+function finishReviewOnly() {
   const s = st.L.session;
-  lessonFrame(`<div class="celebrate"><div class="big">🏆</div><h1>오늘 학습 끝!</h1>
+  lessonFrame(`<div class="celebrate"><div class="big">🏆</div><h1>복습 끝!</h1>
     <p class="muted">${esc(callName())}, 정말 잘했어요</p>
-    <div class="stat3"><div class="card"><b>${s.new_words}</b><span>새 단어</span></div>
-    <div class="card"><b>${s.reviewed_words}</b><span>복습</span></div>
+    <div class="stat3"><div class="card"><b>${s.reviewed_words}</b><span>복습</span></div>
+    <div class="card"><b>${s.correct}</b><span>정답</span></div>
     <div class="card"><b>+${s.xp}</b><span>⭐ 점수</span></div></div>
-    <div class="stack"><button class="btn" id="home">홈으로</button>
-    <button class="btn ghost" id="lis">🎧 오늘 단어 듣기</button></div></div>`);
+    <button class="btn" id="home">홈으로</button></div>`);
   fx("win");
-  endLesson(true, false);
-  document.getElementById("home").onclick = () => go("home");
-  document.getElementById("lis").onclick = () => { st.listen.list = "today"; go("listen"); };
+  document.getElementById("home").onclick = () => endLesson();
 }
 
-function endLesson(finished, navigate = true) {
+function endLesson(navigate = true) {
   stopAll();
   document.querySelector(".feedback")?.remove();
-  if (st.L) { st.L.session.ended_at = S.nowISO(); saveSess(st.L.session); }
+  document.querySelector(".party")?.remove();
+  if (st.L) { clearTimeout(st.L.auto); clearTimeout(st.L.sayT); st.L.session.ended_at = S.nowISO(); saveSess(st.L.session); }
   st.L = null;
   DB.flush();
   if (navigate) go("home");
@@ -548,14 +693,18 @@ function playlists() {
   const all = Object.values(st.progress);
   const w = (ps) => ps.map((p) => st.byId[p.word_id]).filter(Boolean);
   const weekAgo = S.todayKST(-6);
+  const done = passedToday(), cur = currentDay();
+  const todayDay = done ? done.day : cur;
+  const todayWords = todayDay ? dayWords(todayDay).filter((x) => done || st.progress[x.id]) : [];
+  const nextDay = done ? cur : cur && cur + 1 <= lastDay() ? cur + 1 : null;
   return [
-    { key: "today", em: "✨", t: "오늘 배운 단어", words: w(learnedToday()) },
+    { key: "today", em: "✨", t: todayDay ? `오늘 단어 (Day ${todayDay})` : "오늘 단어", words: todayWords },
     { key: "due", em: "🔁", t: "오늘 복습할 단어", words: w(S.dueList(st.progress, 999)) },
     { key: "week", em: "📅", t: "이번 주 배운 단어", words: w(all.filter((p) => S.kstDate(p.first_learned_at) >= weekAgo)) },
     { key: "weak", em: "💪", t: "자주 틀린 단어", words: w(all.filter((p) => p.wrong_count > 0)
         .sort((a, b) => b.wrong_count / (b.correct_count + b.wrong_count) - a.wrong_count / (a.correct_count + a.wrong_count)).slice(0, 30)) },
     { key: "all", em: "📚", t: "배운 단어 전체", words: w(all), shuffle: true },
-    { key: "preview", em: "👀", t: "내일 배울 단어 미리 듣기", words: S.nextNewWords(st.words, st.progress, target()) },
+    { key: "preview", em: "👀", t: nextDay ? `다음 단어 미리 듣기 (Day ${nextDay})` : "다음 단어 미리 듣기", words: nextDay ? dayWords(nextDay) : [] },
   ];
 }
 
@@ -663,7 +812,7 @@ function renderWords() {
   const counts = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map((b) => [b, all.filter((p) => p.box === b).length]));
   const list = all.filter((p) => p.box === st.wordBox)
     .sort((a, b) => (a.next_due < b.next_due ? -1 : 1)).map((p) => ({ p, w: st.byId[p.word_id] })).filter((x) => x.w);
-  const remaining = S.nextNewWords(st.words, st.progress, 9999).length;
+  const remaining = st.words.filter((x) => !st.progress[x.id]).length;
   $app.innerHTML = `${statusbar()}<h1>📚 내 단어장</h1>
     <p class="muted" style="margin-bottom:14px">맞히면 다음 상자로! 상자 6을 넘으면 졸업 🎓</p>
     <div class="boxes">${[1, 2, 3, 4, 5, 6, 7].map((b) => `<button data-b="${b}" class="${b === st.wordBox ? "on" : ""}" style="border-top:5px solid var(--b${b})">
@@ -683,11 +832,11 @@ async function renderRewards() {
   const grads = Object.values(st.progress).filter((p) => p.box === S.GRAD_BOX).map((p) => st.byId[p.word_id]).filter(Boolean);
   const slots = Math.max(12, Math.ceil((grads.length + 1) / 6) * 6);
   const draw = (rewards) => {
-    const val = { streak: strk, graduated: grads.length, xp };
-    const unit = { streak: "일 연속", graduated: "개 졸업", xp: "점" };
+    const val = { streak: strk, graduated: grads.length, xp, days: passedDays().length };
+    const unit = { streak: "일 연속", graduated: "개 졸업", xp: "점", days: " Day 통과" };
     $app.innerHTML = `${statusbar()}<h1>🏆 보상</h1>
       <section class="stat3"><div class="card"><b>🔥${strk}</b><span>연속 학습일</span></div>
-        <div class="card"><b>${S.levelOf(xp)}</b><span>레벨</span></div><div class="card"><b>${xp}</b><span>⭐ 점수</span></div></section>
+        <div class="card"><b>${passedDays().length}</b><span>통과한 Day</span></div><div class="card"><b>${xp}</b><span>⭐ 점수</span></div></section>
       <h2>부모님과 약속한 보상</h2>
       <div class="stack">${rewards.length ? rewards.map((r) => {
         const v = val[r.condition_type] ?? 0, pct = Math.min(100, Math.round((v / r.target) * 100)), done = v >= r.target || r.achieved_at;

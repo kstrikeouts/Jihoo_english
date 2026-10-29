@@ -13,8 +13,8 @@ create table if not exists learners (
   owner_id         uuid not null default auth.uid()
                    references auth.users(id) on delete cascade,
   name             text not null,
-  grade            smallint not null check (grade between 3 and 6),
-  daily_new_target smallint not null default 5,
+  grade            smallint not null default 4 check (grade between 3 and 6),
+  daily_new_target smallint not null default 7,
   parent_pin       text,                      -- 부모 화면 진입용 4자리 (편의 기능, 보안 아님)
   settings         jsonb not null default '{}'::jsonb,  -- 듣기 속도, 반복 횟수 등
   created_at       timestamptz not null default now()
@@ -27,7 +27,7 @@ create table if not exists learners (
 -- ---------------------------------------------------------------------
 create table if not exists word_progress (
   learner_id       uuid not null references learners(id) on delete cascade,
-  word_id          text not null,               -- 예: 'g34-0001'
+  word_id          text not null,               -- 예: 'g4-0001'
   box              smallint not null default 1 check (box between 1 and 7),
   next_due         date not null default ((now() at time zone 'Asia/Seoul')::date + 1),
   correct_count    int not null default 0,
@@ -69,6 +69,8 @@ create table if not exists answer_logs (
   word_id     text not null,
   mode        text not null check (mode in
                ('listen_pick','meaning_pick','spell','speak','chunk_speak')),
+  phase       text not null default 'practice'
+              check (phase in ('practice','test','review')),   -- 반복 연습 / Day 테스트 / 복습
   is_correct  boolean not null,
   hint_used   boolean not null default false,
   speak_score smallint check (speak_score between 0 and 3),  -- 발음 별점
@@ -86,10 +88,29 @@ create table if not exists rewards (
   id             uuid primary key default gen_random_uuid(),
   learner_id     uuid not null references learners(id) on delete cascade,
   title          text not null,                -- 예: '주말 야구장 가기'
-  condition_type text not null check (condition_type in ('streak','graduated','xp')),
+  condition_type text not null check (condition_type in ('streak','graduated','xp','days')),
   target         int not null,                 -- 예: 30 (30일 연속)
   achieved_at    timestamptz,
   created_at     timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------
+-- 6. Day 진행 (하루 7개 묶음) — 반복 학습 → 테스트를 모두 맞혀야 통과
+-- ---------------------------------------------------------------------
+create table if not exists day_progress (
+  learner_id    uuid not null references learners(id) on delete cascade,
+  day           smallint not null,                 -- Day 1 ~ 30
+  word_ids      text[] not null,
+  status        text not null default 'learning'
+                check (status in ('learning','testing','passed')),
+  started_at    timestamptz,
+  learned_at    timestamptz,                       -- 반복 학습 끝난 시각
+  passed_at     timestamptz,                       -- 테스트 통과 시각
+  test_rounds   smallint not null default 0,       -- 테스트 도전 횟수 (재도전 포함)
+  first_correct smallint,                          -- 첫 도전 정답 수
+  first_total   smallint,                          -- 첫 도전 문제 수
+  updated_at    timestamptz not null default now(),
+  primary key (learner_id, day)
 );
 
 -- =====================================================================
@@ -101,6 +122,7 @@ alter table word_progress  enable row level security;
 alter table study_sessions enable row level security;
 alter table answer_logs    enable row level security;
 alter table rewards        enable row level security;
+alter table day_progress   enable row level security;
 
 create policy "own learners" on learners for all
   using (owner_id = auth.uid()) with check (owner_id = auth.uid());
@@ -114,6 +136,10 @@ create policy "own sessions" on study_sessions for all
   with check (learner_id in (select id from learners where owner_id = auth.uid()));
 
 create policy "own answers" on answer_logs for all
+  using      (learner_id in (select id from learners where owner_id = auth.uid()))
+  with check (learner_id in (select id from learners where owner_id = auth.uid()));
+
+create policy "own days" on day_progress for all
   using      (learner_id in (select id from learners where owner_id = auth.uid()))
   with check (learner_id in (select id from learners where owner_id = auth.uid()));
 

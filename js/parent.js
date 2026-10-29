@@ -48,9 +48,9 @@ function login() {
 async function load() {
   try { await DB.loadLearner(); } catch (e) { $app.innerHTML = `<p class="err" style="padding-top:30vh">${esc(e.message)}</p>`; return; }
   const words = (await Promise.all(CONFIG.WORD_FILES.map((f) => fetch(f).then((r) => r.json())))).flatMap((l) => l.words);
-  const [progress, sessions, answers, rewards] = await Promise.all([
-    DB.loadProgress(), DB.loadSessions(), DB.loadAnswers(120), DB.loadRewards()]);
-  D = { words, byId: Object.fromEntries(words.map((w) => [w.id, w])), progress, sessions, answers, rewards, loadedAt: new Date() };
+  const [progress, sessions, answers, rewards, days] = await Promise.all([
+    DB.loadProgress(), DB.loadSessions(), DB.loadAnswers(120), DB.loadRewards(), DB.loadDays()]);
+  D = { words, byId: Object.fromEntries(words.map((w) => [w.id, w])), progress, sessions, answers, rewards, days, loadedAt: new Date() };
   const pin = DB.learner.parent_pin;
   if (pin && ss.get("je.pin") !== pin) return pinGate(pin);
   render();
@@ -97,11 +97,16 @@ function render() {
   const streak = S.streak(S.studyDates(D.sessions));
   const due = S.dueList(D.progress, 999).length;
   const L = DB.learner;
+  const passedN = Object.values(D.days).filter((r) => r.status === "passed").length;
+  const lastDay = Math.max(0, ...D.words.map((w) => w.day || 0));
+  const testQ = D.answers.filter((a) => a.phase === "test" && inWeek(S.kstDate(a.answered_at), thisWeek));
 
   $app.innerHTML = `
     <div class="head"><h1>${esc(L.name)} 학습 현황</h1><a href="index.html">학습 화면 →</a></div>
     <p class="muted" style="font-size:13px">${DB.mode === "local" ? "📱 체험 모드 — 이 기기에 저장된 기록만 보여요" : "☁️ " + esc(DB.user?.email || "")} ·
       ${D.loadedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준 <button id="refresh" style="color:var(--sky-d)">새로고침</button></p>
+
+    ${todayBanner(today, lastDay)}
 
     <h2>한눈에 보기</h2>
     <div class="kpis">
@@ -109,8 +114,8 @@ function render() {
       <div class="card kpi"><span>이번 주 학습한 날</span><b>${studied}<small style="font-size:16px"> / 7일</small></b><em>오늘 복습 대기 ${due}개</em></div>
       <div class="card kpi"><span>이번 주 학습 시간</span><b>${fmtMin(sumWeek(thisWeek, "active"))}</b><em>지난주 ${fmtMin(sumWeek(lastWeek, "active"))}</em></div>
       <div class="card kpi"><span>이번 주 듣기 시간</span><b>${fmtMin(sumWeek(thisWeek, "audio"))}</b><em>지난주 ${fmtMin(sumWeek(lastWeek, "audio"))}</em></div>
-      <div class="card kpi"><span>배운 단어 / 졸업</span><b>${prog.length} / ${grad}</b><em>전체 ${D.words.length}개 중</em></div>
-      <div class="card kpi"><span>이번 주 정답률</span><b>${accNow == null ? "–" : accNow + "%"}</b><em>지난주 ${accPrev == null ? "–" : accPrev + "%"}</em></div>
+      <div class="card kpi"><span>통과한 Day</span><b>${passedN}<small style="font-size:16px"> / ${lastDay}</small></b><em>배운 단어 ${prog.length}개 · 졸업 ${grad}개</em></div>
+      <div class="card kpi"><span>이번 주 정답률</span><b>${accNow == null ? "–" : accNow + "%"}</b><em>테스트만 ${testQ.length ? pct(testQ.filter((a) => a.is_correct).length, testQ.length) + "%" : "–"} · 지난주 ${accPrev == null ? "–" : accPrev + "%"}</em></div>
     </div>
 
     <h2>주간 학습 시간 <small>최근 8주 · 막대를 누르면 상세</small></h2>
@@ -118,6 +123,9 @@ function render() {
 
     <h2>학습 달력 <small>최근 12주</small></h2>
     <div class="card">${calendar(days, today)}</div>
+
+    <h2>Day 진도 <small>하루 7개 · 테스트를 모두 맞혀야 통과</small></h2>
+    <div class="card">${dayTable(lastDay)}</div>
 
     <h2>단어 진도 <small>상자가 높을수록 오래 기억</small></h2>
     <div class="card">${boxBars(prog)}</div>
@@ -273,14 +281,56 @@ function wrongTable() {
   return `<table class="t"><tr><th>언제</th><th>단어</th><th>문제</th><th>들린 말</th></tr>
     ${rows.map((a) => { const w = D.byId[a.word_id], d = S.kstDate(a.answered_at);
       return `<tr><td>${md(d)}(${dow(d)})</td><td class="en">${w ? w.emoji + " " + esc(S.spoken(w)) : esc(a.word_id)}</td>
-        <td><span class="tag no">${MODE[a.mode] || a.mode}</span></td><td class="muted">${esc(a.transcript || "")}</td></tr>`; }).join("")}</table>`;
+        <td><span class="tag no">${a.phase === "test" ? "테스트 · " : a.phase === "review" ? "복습 · " : ""}${MODE[a.mode] || a.mode}</span></td><td class="muted">${esc(a.transcript || "")}</td></tr>`; }).join("")}</table>`;
+}
+
+// ═════════════════════════ Day 진도 ═════════════════════════
+const DSTATUS = { learning: ["학습 중", ""], testing: ["테스트 대기", ""], passed: ["통과", "ok"] };
+function todayBanner(today, lastDay) {
+  const recs = Object.values(D.days);
+  const passedToday = recs.find((r) => r.passed_at && S.kstDate(r.passed_at) === today);
+  let cur = null;
+  for (let d = 1; d <= lastDay; d++) if (D.days[d]?.status !== "passed") { cur = d; break; }
+  const theme = (d) => D.words.find((w) => w.day === d)?.theme || "";
+  let icon, title, sub;
+  if (passedToday) {
+    const r = passedToday, perfect = r.first_correct === r.first_total;
+    icon = perfect ? "💯" : "✅";
+    title = `오늘 Day ${r.day} (${theme(r.day)}) 통과`;
+    sub = `첫 도전 ${r.first_correct}/${r.first_total} 정답${r.test_rounds > 1 ? ` · ${r.test_rounds}번 만에 통과` : " · 한 번에 통과"} · ${kstTime(r.passed_at)}`;
+  } else if (cur) {
+    const r = D.days[cur];
+    icon = r?.status === "testing" ? "📝" : r?.started_at ? "✏️" : "⏳";
+    title = `오늘 할 차례: Day ${cur} (${theme(cur)})`;
+    sub = !r?.started_at ? "아직 시작하지 않았어요" : r.status === "testing"
+      ? `반복 학습 완료 · 테스트 ${r.test_rounds ? `${r.test_rounds}번 도전, 아직 통과 전` : "대기 중"}` : "반복 학습 중";
+  } else { icon = "👑"; title = "모든 Day 통과!"; sub = `${lastDay}일 단어장을 완주했어요`; }
+  return `<div class="card" style="display:flex;gap:14px;align-items:center;margin-top:14px">
+    <span style="font-size:40px">${icon}</span><div><div style="font-size:18px">${esc(title)}</div><div class="muted" style="font-size:14px">${esc(sub)}</div></div></div>`;
+}
+function kstTime(iso) { const t = kst(iso); return `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`; }
+function dayTable(lastDay) {
+  const theme = (d) => D.words.find((w) => w.day === d)?.theme || "";
+  const cells = Array.from({ length: lastDay }, (_, i) => {
+    const r = D.days[i + 1];
+    const bg = r?.status === "passed" ? (r.first_correct === r.first_total ? "var(--yellow)" : "var(--mint)") : r ? "var(--seq-2)" : "var(--seq-0)";
+    return `<span title="Day ${i + 1}" style="aspect-ratio:1;border-radius:6px;background:${bg};display:grid;place-items:center;font-size:11px;color:${r?.status === "passed" ? "#fff" : "var(--muted)"}">${i + 1}</span>`;
+  }).join("");
+  const rows = Object.values(D.days).filter((r) => r.started_at).sort((a, b) => b.day - a.day).slice(0, 14);
+  return `<div style="display:grid;grid-template-columns:repeat(10,1fr);gap:4px">${cells}</div>
+    <div class="legend" style="margin:10px 0 4px"><span><i style="background:var(--yellow)"></i>한 번에 통과</span><span><i style="background:var(--mint)"></i>재도전 후 통과</span><span><i style="background:var(--seq-2)"></i>진행 중</span></div>
+    ${rows.length ? `<table class="t"><tr><th>Day</th><th>주제</th><th>상태</th><th style="text-align:right">첫 테스트</th><th style="text-align:right">도전</th></tr>
+    ${rows.map((r) => `<tr><td>${r.day}</td><td>${esc(theme(r.day))}</td>
+      <td><span class="tag ${DSTATUS[r.status]?.[1] || ""}">${DSTATUS[r.status]?.[0] || r.status}</span>${r.passed_at ? ` <span class="muted" style="font-size:12px">${md(S.kstDate(r.passed_at))}</span>` : ""}</td>
+      <td class="num">${r.first_total ? `${r.first_correct}/${r.first_total}` : "–"}</td><td class="num">${r.test_rounds || 0}번</td></tr>`).join("")}</table>`
+      : `<p class="muted">아직 시작한 Day가 없어요</p>`}`;
 }
 
 // ═════════════════════════ 보상 · 설정 ═════════════════════════
-const COND = { streak: ["연속 학습", "일"], graduated: ["졸업 단어", "개"], xp: ["누적 점수", "점"] };
+const COND = { streak: ["연속 학습", "일"], graduated: ["졸업 단어", "개"], xp: ["누적 점수", "점"], days: ["통과한 Day", "개"] };
 function rewardsBlock(streak, grad) {
   const xp = D.sessions.reduce((a, s) => a + (s.xp || 0), 0);
-  const val = { streak, graduated: grad, xp };
+  const val = { streak, graduated: grad, xp, days: Object.values(D.days).filter((r) => r.status === "passed").length };
   // 달성한 보상은 자동으로 달성일 기록
   for (const r of D.rewards) if (!r.achieved_at && val[r.condition_type] >= r.target) { r.achieved_at = S.nowISO(); DB.saveReward({ ...r }); }
   const list = D.rewards.map((r) => {
@@ -292,7 +342,7 @@ function rewardsBlock(streak, grad) {
   }).join("");
   return `${list || `<p class="muted">아직 보상이 없어요. 아래에서 추가해 보세요.</p>`}
     <div class="form"><input class="input" id="rt" placeholder="보상 (예: 주말에 야구장 가기)">
-      <div class="row"><select class="input" id="rc"><option value="streak">연속 학습일</option><option value="graduated">졸업 단어 수</option><option value="xp">누적 점수</option></select>
+      <div class="row"><select class="input" id="rc"><option value="streak">연속 학습일</option><option value="graduated">졸업 단어 수</option><option value="xp">누적 점수</option><option value="days">통과한 Day 수</option></select>
       <input class="input" id="rn" type="number" inputmode="numeric" min="1" placeholder="목표 (예: 30)"></div>
       <button class="btn small" id="radd">보상 추가</button></div>`;
 }
@@ -300,7 +350,7 @@ function rewardsBlock(streak, grad) {
 function settingsBlock() {
   const L = DB.learner;
   const seg = (name, opts, cur) => `<div class="seg" data-set="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${v == cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
-  return `<div class="field"><label>하루 새 단어 수</label>${seg("daily_new_target", [[3, "3개"], [5, "5개"], [7, "7개"]], L.daily_new_target)}</div>
+  return `<div class="field"><label>하루 학습량</label><p style="font-size:15px">하루 7개 (Day 1~30, 4학년 단어·숙어 210개)</p></div>
     <div class="field"><label>학년</label>${seg("grade", [[3, "3학년"], [4, "4학년"], [5, "5학년"], [6, "6학년"]], L.grade)}</div>
     <div class="field"><label>부모 화면 비밀번호 (숫자 4자리 · 아이가 설정을 바꾸지 않도록)</label>
       <div class="row"><input class="input" id="pinset" type="password" inputmode="numeric" maxlength="4" placeholder="${L.parent_pin ? "설정됨 — 바꾸려면 입력" : "설정 안 됨"}">

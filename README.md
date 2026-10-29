@@ -10,13 +10,15 @@ index.html            지후용 앱 (오늘 학습 / 🎧 듣기 / 단어장 / �
 parent.html           부모 대시보드
 css/style.css
 js/config.js          ★ Supabase 주소·키 입력하는 곳
-js/app.js             학습 흐름 (복습 → 새 단어 5개 → 말하기 미션)
+js/app.js             학습 흐름 (복습 → Day 단어 7개 반복 학습 → 테스트 통과)
+js/celebrate.js       테스트 통과 칭찬 씬
 js/srs.js             복습 엔진 (라이트너 6칸 상자 1·3·7·14·30·60일)
 js/db.js              Supabase 연동 + 오프라인 전송 대기열
 js/audio.js           음성 재생 + 듣기 반복 모드 (잠금화면 재생)
 js/speech.js          발음 인식 채점
 js/parent.js          부모 대시보드
-data/words_g34.json   3~4학년 단어장 (지금은 시작용 70개)
+data/words_g4.json    4학년 단어·숙어 210개 (Day 1~30, 하루 7개)
+tools/make_words_g4.py 단어장 원본 — 고친 뒤 실행하면 words_g4.json 이 다시 만들어짐
 audio/                음성 MP3 (GitHub Actions 가 자동 생성 — 직접 넣지 않음)
 tools/build_audio.py  음성 생성 스크립트
 supabase/schema.sql   DB 테이블·보안 정책
@@ -66,19 +68,18 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 - ⚠️ 홈 화면 앱에서 잠금 시 소리가 멈추면 **Safari 에서 열어** 듣기 모드를 쓰세요 (iOS 버전에 따라 다름)
 - 듣기는 복습 상자를 움직이지 않고 **듣기 시간만 기록**됩니다
 
-## 단어 추가·수정
-1. `data/words_g34.json` 에 같은 형식으로 추가 (id 는 겹치지 않게)
-2. GitHub 에 올리면 Actions 가 **새 단어 음성만** 만들어 자동 배포
-3. 5학년용은 `data/words_g56.json` 을 만들고 `js/config.js` 의 `WORD_FILES` 와 `sw.js` 의 `SHELL_FILES` 에 추가
+## 하루 학습 흐름
+1. **복습** — 전에 배운 단어 중 복습 날짜가 된 것 (라이트너 상자 1·3·7·14·30·60일)
+2. **Day N 단어 7개 반복 학습** — 카드로 만나기 → 듣고 고르기 → 뜻 보고 고르기 → 스펠링. 틀리거나 힌트를 쓰면 조금 뒤 다시 나와 모두 맞힐 때까지 반복
+3. **테스트** — 1부 4지선다 7문제 + 2부 스펠링 7문제 (힌트 없음, 스펠링은 가짜 알파벳 2개 섞임)
+   - 모두 맞히면 통과 → 칭찬 씬 🎉 (한 번에 만점이면 왕관·금색 연출)
+   - 틀린 문제가 있으면 그 문제만 다시 도전 → 모두 맞힐 때까지
+4. 통과하지 못한 Day 는 다음 날 그대로 이어서 합니다 (새 단어가 쌓이지 않음)
 
-단어 항목 형식:
-```json
-{ "id": "g34-0071", "word": "zebra", "type": "word", "meaning": "얼룩말", "theme": "animal",
-  "emoji": "🦓", "example": "I see a zebra.", "example_ko": "얼룩말이 보여.",
-  "pattern": "I see a ___.", "publishers": 4 }
-```
-- `type`: `word` 단어 / `chunk` 표현 / `idiom` 숙어
-- `publishers`: 등장한 출판사 수 (교집합 분석 후 입력, 높을수록 먼저 배치)
+## 단어 추가·수정
+1. `tools/make_words_g4.py` 의 목록을 고치고 `python tools/make_words_g4.py` 실행 (중복·형식 자동 검사)
+2. GitHub 에 올리면 Actions 가 **새 단어 음성만** 만들어 커밋
+3. 5학년용은 같은 방식으로 `data/words_g5.json` 을 만들고 `js/config.js` 의 `WORD_FILES` 와 `sw.js` 의 `SHELL_FILES` 에 추가
 
 ## 앱 파일을 고친 뒤
 `sw.js` 첫 줄의 `VERSION` 숫자를 올려야(예: `je-v2`) 아이 폰에 새 버전이 반영됩니다.

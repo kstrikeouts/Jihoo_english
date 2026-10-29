@@ -8,8 +8,8 @@ export const CONFIG = {
   SUPABASE_ANON_KEY: "",  // anon public 키 (공개돼도 되는 키. 데이터는 RLS 로 보호)
 
   LEARNER_NAME: "정지후",
-  DEFAULT_GRADE: 3,
-  DAILY_NEW: 5,           // 하루 새 단어 수 (부모 화면에서 변경 가능)
+  DEFAULT_GRADE: 4,
+  DAILY_NEW: 7,           // 하루 단어 수 (단어장이 Day 별 7개로 나뉘어 있음)
   REVIEW_CAP: 20,         // 하루 최대 복습 카드 수
-  WORD_FILES: ["data/words_g34.json"],  // 5학년이 되면 "data/words_g56.json" 추가
+  WORD_FILES: ["data/words_g4.json"],
 };

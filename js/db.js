@@ -164,6 +164,28 @@ export const DB = {
     return LS.get(this.k("answers"), []).slice().reverse();
   },
 
+  // ── Day 진행 (하루 7개 묶음 · 테스트 통과 기록) ──────────
+  async loadDays() {
+    const local = LS.get(this.k("days"), {});
+    if (this.mode === "cloud" && this.client && navigator.onLine) {
+      try {
+        const remote = await this.selectAll("day_progress", (q) => q.eq("learner_id", this.learner.id));
+        for (const r of remote) {
+          const l = local[r.day];
+          if (!l || (r.updated_at || "") > (l.updated_at || "")) local[r.day] = r;
+        }
+        LS.set(this.k("days"), local);
+      } catch (e) { console.warn("Day 기록 불러오기 실패 — 폰 기록 사용", e); }
+    }
+    return local;
+  },
+  saveDay(rec) {
+    const map = LS.get(this.k("days"), {});
+    map[rec.day] = rec;
+    LS.set(this.k("days"), map);
+    this.enqueue("day_progress", "upsert", rec, "learner_id,day", `dp:${rec.day}`);
+  },
+
   // ── 보상 ──────────────────────────────────────────────────
   async loadRewards() {
     if (this.mode === "cloud" && this.client && navigator.onLine) {

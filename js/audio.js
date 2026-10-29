@@ -88,15 +88,24 @@ let ctx = null;
 export function fx(kind) {
   try {
     ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-    const notes = { ok: [660, 880], no: [300, 220], win: [523, 659, 784, 1047] }[kind];
-    notes.forEach((f, i) => {
+    if (ctx.state === "suspended") ctx.resume();
+    // [주파수, 시작(초), 길이(초)]
+    const seq = {
+      ok: [[660, 0, 0.18], [880, 0.11, 0.18]],
+      no: [[300, 0, 0.18], [220, 0.11, 0.18]],
+      win: [[523, 0, 0.18], [659, 0.11, 0.18], [784, 0.22, 0.18], [1047, 0.33, 0.3]],
+      // 빠-바-바-밤! 빠바밤~ (통과 팡파르)
+      fanfare: [[523, 0, 0.14], [523, 0.15, 0.14], [523, 0.3, 0.14], [659, 0.45, 0.4], [587, 0.9, 0.14], [659, 1.05, 0.14],
+                [784, 1.2, 0.7], [1047, 1.2, 0.7], [1319, 1.5, 0.6]],
+    }[kind];
+    seq.forEach(([f, at, len]) => {
       const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = "sine"; o.frequency.value = f;
-      const t = ctx.currentTime + i * 0.11;
+      o.type = kind === "fanfare" ? "triangle" : "sine"; o.frequency.value = f;
+      const t = ctx.currentTime + at;
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.2);
+      g.gain.exponentialRampToValueAtTime(kind === "fanfare" ? 0.16 : 0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + len + 0.02);
     });
   } catch {}
 }

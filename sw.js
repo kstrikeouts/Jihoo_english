@@ -1,13 +1,13 @@
 // 오프라인 지원 — 지하철에서도 앱과 음성이 동작하도록
 // 앱 파일을 고치면 VERSION 숫자를 올려 주세요 (새 버전이 폰에 반영됨)
-const VERSION = "je-v2";
+const VERSION = "je-v3";
 const SHELL = `${VERSION}-shell`;
 const AUDIO = "je-audio";       // 음성 파일은 버전과 무관하게 유지
 const RUNTIME = "je-runtime";   // 글꼴·라이브러리
 const SHELL_FILES = [
   "./", "index.html", "parent.html", "css/style.css", "manifest.json",
-  "js/app.js", "js/parent.js", "js/config.js", "js/db.js", "js/srs.js", "js/audio.js", "js/speech.js", "js/ui.js",
-  "data/words_g34.json", "icons/icon-192.png", "icons/icon-512.png",
+  "js/app.js", "js/parent.js", "js/config.js", "js/db.js", "js/srs.js", "js/audio.js", "js/speech.js", "js/ui.js", "js/celebrate.js",
+  "data/words_g4.json", "icons/icon-192.png", "icons/icon-512.png",
 ];
 
 self.addEventListener("install", (e) => {
