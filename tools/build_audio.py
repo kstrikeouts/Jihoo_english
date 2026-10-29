@@ -1,5 +1,5 @@
 """
-단어 JSON → 음성 MP3 자동 생성 (GitHub Actions 에서 실행)
+단어 JSON → 음성 MP3 자동 생성 (영어: 성인 남성 Guy, 한국어: 성인 남성 InJoon) (GitHub Actions 에서 실행)
 
 단어마다 5개 파일:
   {id}_w.mp3   영어 단어                         (퀴즈용)
@@ -20,10 +20,11 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = ROOT / "audio"
 MANIFEST = OUT / "manifest.json"
-VOICE_EN = "en-US-AnaNeural"     # 어린이 목소리 영어
-VOICE_KO = "ko-KR-SunHiNeural"
-RATE_EN = "-15%"                 # 초3 눈높이로 조금 느리게
-FORMAT_VERSION = 1               # 파일 구성이 바뀌면 숫자를 올려 전체 재생성
+VOICE_EN = "en-US-GuyNeural"     # 성인 남성 · 표준 미국 발음
+VOICE_KO = "ko-KR-InJoonNeural"  # 성인 남성 한국어
+RATE_EN = "-10%"                 # 또박또박 조금 느리게
+FORMAT_VERSION = 2               # 파일 구성이 바뀌면 숫자를 올려 전체 재생성
+LEAD_MS = 500                    # 앞부분 무음 — 재생 시작 때 첫소리가 뭉개지지 않게
 CONCURRENCY = 4
 
 
@@ -90,13 +91,13 @@ async def build_word(w, tmp, sem):
             tts(w["example_ko"], VOICE_KO, xko),
         )
     s = lambda ms: silence(tmp, ms)
-    tail = s(300)
+    tail, lead = s(300), s(LEAD_MS)
     recipes = {
-        "w": [en, tail],
-        "x": [xen, tail],
-        "ek": [en, s(800), ko, s(800), en, s(1200)],
-        "ke": [ko, s(2000), en, s(500), en, s(1200)],
-        "ex": [xen, s(700), xko, s(1200)],
+        "w": [lead, en, tail],
+        "x": [lead, xen, tail],
+        "ek": [lead, en, s(800), ko, s(800), en, s(1200)],
+        "ke": [lead, ko, s(2000), en, s(500), en, s(1200)],
+        "ex": [lead, xen, s(700), xko, s(1200)],
     }
     for v, parts in recipes.items():
         await asyncio.to_thread(concat, parts, OUT / f"{wid}_{v}.mp3")

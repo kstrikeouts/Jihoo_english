@@ -27,7 +27,8 @@ let voices = [];
 const loadVoices = () => { voices = speechSynthesis?.getVoices?.() || []; };
 if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
 function pickVoice(lang) {
-  const pref = lang === "en" ? ["Samantha", "Ava", "Allison", "Susan"] : ["Yuna", "Sora"];
+  // 성인 남성 목소리 우선 (아이폰: Aaron·Fred·Nathan·Evan / 한국어: Minsu)
+  const pref = lang === "en" ? ["Aaron", "Nathan", "Evan", "Fred", "Alex", "Tom", "Daniel"] : ["Minsu", "Jian", "Suhyun", "Yuna"];
   const list = voices.filter((v) => v.lang.replace("_", "-").startsWith(lang === "en" ? "en-US" : "ko"));
   return pref.map((n) => list.find((v) => v.name.includes(n))).find(Boolean) || list[0] || null;
 }
@@ -37,7 +38,7 @@ function ttsOne(text, lang, rate = 1) {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = lang === "en" ? "en-US" : "ko-KR";
     const v = pickVoice(lang); if (v) u.voice = v;
-    u.rate = (lang === "en" ? 0.85 : 1) * rate;
+    u.rate = (lang === "en" ? 0.9 : 1) * rate;
     u.onend = u.onerror = () => resolve();
     speechSynthesis.speak(u);
   });
@@ -55,6 +56,8 @@ async function ttsVariant(w, v, rate) {
     ex: [["en", w.example], 700, ["ko", w.example_ko]],
   }[v];
   const g = ttsGen;
+  await wait(300); // 첫소리가 잘리지 않게 잠깐 쉬고 시작
+  if (g !== ttsGen) return;
   for (const s of seq) {
     if (g !== ttsGen) return;
     if (typeof s === "number") await wait(s / rate); else await ttsOne(s[1], s[0], rate);
