@@ -77,9 +77,11 @@ let wctx = null, keep = null, curSrc = null;
 export function audioCtx() {
   if (!wctx) {
     wctx = new (window.AudioContext || window.webkitAudioContext)();
-    // 거의 안 들리는 신호를 계속 흘려 출력 장치가 잠들지 않게 함
-    const g = wctx.createGain(); g.gain.value = 0.00001;
-    keep = wctx.createOscillator(); keep.frequency.value = 20; keep.connect(g).connect(wctx.destination); keep.start();
+    // 들리지 않을 만큼 작은 잡음(-66dB)을 계속 흘려 출력 장치(특히 블루투스)가 잠들지 않게 함
+    // (완전 무음이나 너무 작은 신호는 장치가 '소리 없음'으로 보고 꺼 버림)
+    const len = wctx.sampleRate, nb = wctx.createBuffer(1, len, wctx.sampleRate), ch = nb.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * 0.0005;
+    keep = wctx.createBufferSource(); keep.buffer = nb; keep.loop = true; keep.connect(wctx.destination); keep.start();
   }
   return wctx;
 }
@@ -129,7 +131,7 @@ export async function say(w, v = "w", rate = 1) {
       src.buffer = buf; src.connect(c.destination);
       src.onended = () => { if (curSrc === src) curSrc = null; resolve(); };
       curSrc = src;
-      src.start(c.currentTime + 0.03);
+      src.start(c.currentTime + 0.05);
     });
   } catch {
     if (g !== ttsGen) return;

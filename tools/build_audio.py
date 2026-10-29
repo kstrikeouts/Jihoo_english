@@ -23,8 +23,9 @@ MANIFEST = OUT / "manifest.json"
 VOICE_EN = "en-US-GuyNeural"     # 성인 남성 · 표준 미국 발음
 VOICE_KO = "ko-KR-InJoonNeural"  # 성인 남성 한국어
 RATE_EN = "-10%"                 # 또박또박 조금 느리게
-FORMAT_VERSION = 3               # 파일 구성이 바뀌면 숫자를 올려 전체 재생성
-LEAD_MS = 500                    # 앞부분 무음 — 재생 시작 때 첫소리가 뭉개지지 않게
+FORMAT_VERSION = 4               # 파일 구성이 바뀌면 숫자를 올려 전체 재생성
+LEAD_MS = 800                    # 앞부분 여유 — 스피커·블루투스가 깨어나는 동안 첫소리가 묻히지 않게
+QUIET_NOISE = 0.0008             # "완전 무음" 대신 들리지 않을 만큼 작은 잡음(-60dB): 블루투스가 무음으로 보고 잠들지 않게
 CONCURRENCY = 4
 
 
@@ -61,8 +62,9 @@ async def tts(text, voice, path, rate="+0%"):
 def silence(tmp, ms):
     p = tmp / f"sil_{ms}.mp3"
     if not p.exists():
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
-                        "-t", str(ms / 1000), "-b:a", "48k", str(p)], check=True)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                        "-i", f"anoisesrc=color=pink:amplitude={QUIET_NOISE}:sample_rate=24000",
+                        "-t", str(ms / 1000), "-ac", "1", "-b:a", "48k", str(p)], check=True)
     return p
 
 

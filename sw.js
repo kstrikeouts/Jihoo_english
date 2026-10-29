@@ -1,6 +1,6 @@
 // 오프라인 지원 — 지하철에서도 앱과 음성이 동작하도록
 // 앱 파일을 고치면 VERSION 숫자를 올려 주세요 (새 버전이 폰에 반영됨)
-const VERSION = "je-v11";
+const VERSION = "je-v12";
 const SHELL = `${VERSION}-shell`;
 const AUDIO = "je-audio-2";     // 음성 파일 저장소 (주소의 ?h= 버전이 바뀌면 새로 받음)
 const RUNTIME = "je-runtime";   // 글꼴·라이브러리
