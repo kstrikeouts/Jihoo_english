@@ -115,3 +115,28 @@ export const uuid = () =>
   crypto.randomUUID ? crypto.randomUUID()
     : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
         (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
+
+// ── 학습 일정: 학습 5일 → 복습 Day 1일 반복 ─────────────────
+// 단어장의 day(1~30, 7개씩) = 단원. 일정의 Day 번호는 복습 Day 를 포함해 1~36.
+//   Day 1~5 학습 → Day 6 복습(1~5 단어 반복 학습 + 테스트) → Day 7~11 학습 → Day 12 복습 …
+export const LEARN_PER_CYCLE = 5;
+export function buildSchedule(words, every = LEARN_PER_CYCLE) {
+  const units = [...new Set(words.map((w) => w.day))].filter(Boolean).sort((a, b) => a - b);
+  const out = [];
+  let pend = [];
+  const addReview = () => {
+    const covers = pend.map((p) => p.n);
+    const unitSet = new Set(pend.map((p) => p.unit));
+    out.push({ n: out.length + 1, kind: "review", covers, theme: `Day ${covers[0]}~${covers[covers.length - 1]} 복습`,
+      words: words.filter((w) => unitSet.has(w.day)) });
+    pend = [];
+  };
+  for (const u of units) {
+    const ws = words.filter((w) => w.day === u);
+    const item = { n: out.length + 1, kind: "learn", unit: u, theme: ws[0]?.theme || "", words: ws };
+    out.push(item); pend.push(item);
+    if (pend.length === every) addReview();
+  }
+  if (pend.length) addReview();
+  return out;
+}

@@ -41,6 +41,7 @@ async function start() {
   st.progress = await DB.loadProgress();
   st.sessions = await DB.loadSessions();
   st.days = await DB.loadDays();
+  st.sched = S.buildSchedule(st.words);
   st.listen = { ...st.listen, ...(LSget(DB.k("listenOpts"), {})) };
   DB.flush();
   go("home");
@@ -107,10 +108,12 @@ function toast(msg) {
   document.body.appendChild(t); setTimeout(() => t.remove(), 2500);
 }
 
-// ── Day: 하루 7개 묶음 ──
-const dayWords = (d) => st.words.filter((w) => w.day === d);
-const lastDay = () => Math.max(0, ...st.words.map((w) => w.day || 0));
-const dayTheme = (d) => dayWords(d)[0]?.theme || "";
+// ── Day 일정: 학습 5일(하루 7개) → 복습 Day 1일 반복 ──
+const sched = (d) => st.sched[d - 1];
+const dayWords = (d) => sched(d)?.words || [];
+const lastDay = () => st.sched.length;
+const dayTheme = (d) => sched(d)?.theme || "";
+const isReviewDay = (d) => sched(d)?.kind === "review";
 const passedDays = () => Object.values(st.days).filter((r) => r.status === "passed");
 const passedToday = () => passedDays().find((r) => r.passed_at && S.kstDate(r.passed_at) === today());
 function currentDay() {
@@ -119,7 +122,8 @@ function currentDay() {
 }
 function dayRec(d) {
   return st.days[d] ? { ...st.days[d] } : {
-    learner_id: DB.learner.id, day: d, word_ids: dayWords(d).map((w) => w.id), status: "learning",
+    learner_id: DB.learner.id, day: d, kind: sched(d)?.kind || "learn", word_ids: dayWords(d).map((w) => w.id), status: "learning",
+    warmup_at: null,
     started_at: null, learned_at: null, passed_at: null, test_rounds: 0, first_correct: null, first_total: null,
     updated_at: S.nowISO(),
   };
@@ -128,6 +132,18 @@ function saveDay(rec) {
   rec.updated_at = S.nowISO();
   st.days[rec.day] = { ...rec };
   DB.saveDay(rec);
+}
+// 학습 Day 시작 전 워밍업: 전날 Day 단어 + 복습 날짜가 된 단어 (최대 14개)
+function warmupWords(d) {
+  const seen = new Set(dayWords(d).map((w) => w.id));
+  const out = [];
+  const prev = d > 1 && sched(d - 1)?.kind === "learn" && st.days[d - 1]?.status === "passed" ? d - 1 : null;
+  if (prev) dayWords(prev).forEach((w) => { seen.add(w.id); out.push(w); });
+  S.dueList(st.progress, CONFIG.REVIEW_CAP).forEach((p) => {
+    const w = st.byId[p.word_id];
+    if (w && !seen.has(w.id)) { seen.add(w.id); out.push(w); }
+  });
+  return { prevDay: prev, words: out.slice(0, 14) };
 }
 function reviewDue() {
   const cur = new Set(dayWords(currentDay() || 0).map((w) => w.id));
@@ -157,8 +173,11 @@ function stampBoard(highlight) {
   const n = lastDay();
   return `<div class="stamps">${Array.from({ length: n }, (_, i) => {
     const d = i + 1, r = st.days[d];
-    const cls = r?.status === "passed" ? (r.first_correct === r.first_total ? "on perfect" : "on") : d === highlight ? "now" : "";
-    return `<span class="${cls}" title="Day ${d}">${r?.status === "passed" ? (r.first_correct === r.first_total ? "💯" : "✔") : d}</span>`;
+    const rv = isReviewDay(d);
+    const passed = r?.status === "passed", perfect = passed && r.first_correct === r.first_total;
+    const cls = [passed ? (perfect ? "on perfect" : "on") : d === highlight ? "cur" : "", rv ? "rv" : ""].join(" ");
+    const label = passed ? (rv ? "🌟" : perfect ? "💯" : "✔") : rv ? `<small>복습</small>${d}` : d;
+    return `<span class="${cls}" title="Day ${d}${rv ? " 복습" : ""}">${label}</span>`;
   }).join("")}</div>`;
 }
 
@@ -175,7 +194,8 @@ function renderHome() {
     main = `<section class="card mission today-done">
       <div class="td-medal">🏅</div>
       <p class="td-title">오늘 Day ${doneRec.day} 통과!</p>
-      <p class="muted">${d ? `내일은 Day ${d} · ${esc(dayTheme(d))} 단어를 만나요` : "30일 단어장을 모두 끝냈어요!"}</p>
+      <p class="muted">${!d ? `${lastDay()}일 단어장을 모두 끝냈어요!` : isReviewDay(d)
+        ? `내일은 Day ${d} · 🌟 복습 Day! ${esc(dayTheme(d))}` : `내일은 Day ${d} · ${esc(dayTheme(d))} 단어를 만나요`}</p>
       <div class="stack" style="margin-top:16px">
         <button class="btn sky" id="toListen">🎧 오늘 단어 듣기</button>
         ${due ? `<button class="btn ghost" id="revOnly">🔁 복습 ${due}개 하기</button>` : ""}
@@ -185,15 +205,21 @@ function renderHome() {
       <p class="td-title">4학년 단어장 완주!</p><p class="muted">${lastDay()}일 동안 ${st.words.length}개를 모두 통과했어요</p>
       ${due ? `<button class="btn" id="revOnly" style="margin-top:16px">🔁 복습 ${due}개 하기</button>` : ""}</section>`;
   } else {
-    const rec = dayRec(d), ws = dayWords(d);
+    const rec = dayRec(d), ws = dayWords(d), rv = isReviewDay(d);
     const learned = rec.status !== "learning";
-    main = `<section class="card mission">
-      <div class="day-head"><span class="day-badge">Day ${d}</span><span class="day-theme">${esc(dayTheme(d))}</span></div>
-      <div class="chips7">${ws.map((w) => `<span title="${esc(w.word)}">${w.emoji}</span>`).join("")}</div>
+    const warm = warmupWords(d);
+    const warmDone = !!rec.warmup_at || !warm.words.length;
+    const chips = rv
+      ? ws.slice(0, 6).map((w) => `<span title="${esc(w.word)}">${w.emoji}</span>`).join("") + `<span class="more">+${ws.length - 6}</span>`
+      : ws.map((w) => `<span title="${esc(w.word)}">${w.emoji}</span>`).join("");
+    main = `<section class="card mission ${rv ? "review-day" : ""}">
+      <div class="day-head"><span class="day-badge">Day ${d}</span><span class="day-theme">${rv ? "🌟 복습 Day" : esc(dayTheme(d))}</span></div>
+      ${rv ? `<p class="muted" style="margin-top:6px">${esc(dayTheme(d))} · 지난 5일 동안 배운 단어 ${ws.length}개를 다시 연습해요</p>` : ""}
+      <div class="chips7">${chips}</div>
       <ul class="steps">
-        <li class="${due === 0 ? "done" : ""}"><span class="ic">🔁</span>지난 단어 복습<span class="num">${due ? due + "개" : ""}</span></li>
-        <li class="${learned ? "done" : ""}"><span class="ic">✨</span>오늘 단어 ${ws.length}개 반복 학습<span class="num"></span></li>
-        <li><span class="ic">📝</span>테스트 모두 맞히기<span class="num">${rec.test_rounds ? `도전 ${rec.test_rounds}번` : ""}</span></li>
+        ${rv || (!warm.words.length && !rec.warmup_at) ? "" : `<li class="${warmDone ? "done" : ""}"><span class="ic">☀️</span>${warm.prevDay ? `어제 배운 Day ${warm.prevDay} 복습` : "지난 단어 복습"}<span class="num">${warmDone ? "" : warm.words.length + "개"}</span></li>`}
+        <li class="${learned ? "done" : ""}"><span class="ic">${rv ? "🔁" : "✨"}</span>${rv ? `단어 ${ws.length}개 반복 학습` : `오늘 단어 ${ws.length}개 반복 학습`}<span class="num"></span></li>
+        <li><span class="ic">📝</span>${rv ? "복습 테스트 모두 맞히기" : "테스트 모두 맞히기"}<span class="num">${rec.test_rounds ? `도전 ${rec.test_rounds}번` : ""}</span></li>
       </ul>
       <button class="btn" id="startL">${learned ? "테스트 도전 ▶" : rec.started_at ? "이어서 하기 ▶" : "오늘 학습 시작 ▶"}</button>
       ${learned ? `<button class="btn ghost small" id="reLearn" style="margin-top:12px">단어 한 번 더 연습하고 테스트</button>` : ""}
@@ -205,7 +231,7 @@ function renderHome() {
     <p class="muted">레벨 ${lv} · 다음 레벨까지 ⭐ ${lv * 200 - totalXP()}</p>
     ${main}
     <h2>도장판 <small class="muted" style="font-size:15px">${passed}/${lastDay()} Day</small></h2>
-    <div class="card">${stampBoard(d)}</div>`;
+    <div class="card">${stampBoard(d)}<p class="stamp-note">5일 배우고, 6일째는 🌟 복습 Day</p></div>`;
   document.getElementById("startL")?.addEventListener("click", () => startToday());
   document.getElementById("reLearn")?.addEventListener("click", () => startToday({ relearn: true }));
   document.getElementById("revOnly")?.addEventListener("click", () => startToday({ reviewOnly: true }));
@@ -226,13 +252,21 @@ function reviewMode(p, w) {
 
 function startToday(opts = {}) {
   const phases = [];
-  const due = reviewDue();
   const d = currentDay();
-  if (due.length) phases.push(() => reviewPhase(due));
-  if (!opts.reviewOnly && d && !passedToday()) {
+  if (opts.reviewOnly || !d || passedToday()) {
+    const due = reviewDue();
+    if (due.length) phases.push(() => reviewPhase(due));
+  } else {
     const rec = dayRec(d);
     if (!rec.started_at) { rec.started_at = S.nowISO(); saveDay(rec); }
-    if (rec.status === "learning" || opts.relearn) phases.push(() => learnPhase(d, !!opts.relearn));
+    const learning = rec.status === "learning" || opts.relearn;
+    if (isReviewDay(d)) {
+      if (learning) phases.push(() => reviewDayPractice(d));
+    } else {
+      const warm = warmupWords(d);
+      if (!rec.warmup_at && warm.words.length && rec.status === "learning") phases.push(() => warmupPhase(d, warm));
+      if (learning) phases.push(() => learnPhase(d, !!opts.relearn));
+    }
     phases.push(() => testPhase(d));
   }
   if (!phases.length) return renderHome();
@@ -290,6 +324,30 @@ function reviewPhase(due) {
   const steps = [{ type: "phase", emoji: "🔁", title: "복습 시간", sub: `전에 배운 단어 ${due.length}개를 다시 만나요` }];
   S.shuffle(due).forEach((p) => { const w = st.byId[p.word_id]; steps.push({ type: "review", id: w.id, mode: reviewMode(p, w) }); });
   runSteps("복습", steps, nextPhase);
+}
+
+// ── 1-1. 워밍업: 어제 배운 단어 간단 복습 (단어당 1문제, 틀리면 끝에 한 번 더) ──
+function warmupPhase(d, warm) {
+  const steps = [{ type: "phase", emoji: "☀️", title: warm.prevDay ? `어제 배운 Day ${warm.prevDay} 복습` : "지난 단어 복습",
+    sub: `${warm.words.length}개만 빠르게 확인하고 오늘 단어로 넘어가요` }];
+  S.shuffle(warm.words).forEach((w, i) => steps.push({ type: "review", id: w.id, mode: i % 2 ? "listen_pick" : "meaning_pick" }));
+  runSteps("어제 복습", steps, () => {
+    const rec = dayRec(d); rec.warmup_at = S.nowISO(); saveDay(rec);
+    nextPhase();
+  });
+}
+
+// ── 복습 Day: 지난 5일 단어 전체 반복 학습 (틀리면 맞힐 때까지) ──
+function reviewDayPractice(d) {
+  const ws = dayWords(d);
+  const steps = [{ type: "phase", emoji: "🌟", title: `Day ${d} · 복습 Day`, sub: `${dayTheme(d)} — 단어 ${ws.length}개를 다시 연습해요. 틀린 단어는 맞힐 때까지 다시 나와요` }];
+  S.shuffle(ws).forEach((w, i) => steps.push({ type: "practice", id: w.id,
+    mode: i % 3 === 2 && spellable(w) ? "spell" : i % 2 ? "listen_pick" : "meaning_pick" }));
+  runSteps("복습 Day 반복 학습", steps, () => {
+    const rec = dayRec(d);
+    if (rec.status === "learning") { rec.status = "testing"; rec.learned_at = S.nowISO(); saveDay(rec); }
+    nextPhase();
+  });
 }
 
 // ── 2. 오늘 단어 반복 학습 ──
@@ -361,8 +419,16 @@ async function speakAttempt(w, targetText) {
 // ── 3. 테스트 ──
 function testPhase(d) {
   const ws = dayWords(d);
-  const choice = S.shuffle(ws).map((w, i) => ({ type: "test", id: w.id, mode: i % 2 ? "listen_pick" : "meaning_pick", part: 1 }));
-  const spell = S.shuffle(ws).map((w) => ({ type: "test", id: w.id, mode: spellable(w) ? "spell" : "listen_pick", part: 2 }));
+  let cw = ws, sw = ws;
+  if (isReviewDay(d)) {
+    // 복습 Day 테스트: 4지선다 10 + 스펠링 10 — 자주 틀린 단어부터
+    const weak = (w) => { const p = st.progress[w.id]; return (p ? p.wrong_count * 2 - p.correct_count * 0.2 : 0) + Math.random(); };
+    const ranked = [...ws].sort((a, b) => weak(b) - weak(a));
+    cw = ranked.slice(0, 10);
+    sw = ranked.filter((w) => spellable(w) && !cw.includes(w)).slice(0, 10);
+  }
+  const choice = S.shuffle(cw).map((w, i) => ({ type: "test", id: w.id, mode: i % 2 ? "listen_pick" : "meaning_pick", part: 1 }));
+  const spell = S.shuffle(sw).map((w) => ({ type: "test", id: w.id, mode: spellable(w) ? "spell" : "listen_pick", part: 2 }));
   st.L.test = { day: d, results: [], total: choice.length + spell.length };
   const steps = [{ type: "testintro", day: d, n1: choice.length, n2: spell.length }, ...choice,
     { type: "phase", emoji: "🔤", title: "2부 · 스펠링", sub: "알파벳을 하나씩 눌러 단어를 완성해요" }, ...spell];
@@ -371,8 +437,9 @@ function testPhase(d) {
 
 function stepTestIntro(step) {
   const rec = dayRec(step.day);
-  lessonFrame(`<div class="celebrate"><div class="big">📝</div><h1>Day ${step.day} 테스트</h1>
-    <p class="muted" style="margin:6px 0 18px">모두 맞히면 오늘 단어 통과!</p>
+  const rv = isReviewDay(step.day);
+  lessonFrame(`<div class="celebrate"><div class="big">${rv ? "🌟" : "📝"}</div><h1>Day ${step.day} ${rv ? "복습 " : ""}테스트</h1>
+    <p class="muted" style="margin:6px 0 18px">${rv ? `모두 맞히면 ${esc(dayTheme(step.day))} 통과!` : "모두 맞히면 오늘 단어 통과!"}</p>
     <div class="card test-rules">
       <div><b>1부</b> 4지선다 ${step.n1}문제</div>
       <div><b>2부</b> 스펠링 ${step.n2}문제</div>
@@ -396,13 +463,13 @@ function testRoundEnd(d) {
     const perfect = rec.first_correct === rec.first_total;
     rec.status = "passed"; rec.passed_at = S.nowISO();
     saveDay(rec);
-    const bonus = 50 + (perfect ? 30 : 0);
+    const bonus = (isReviewDay(d) ? 100 : 50) + (perfect ? 30 : 0);
     L.session.xp += bonus; L.session.ended_at = S.nowISO(); saveSess(L.session);
     DB.flush();
     return celebrate({
-      name: callName(), day: d, theme: dayTheme(d), perfect, rounds: rec.test_rounds,
-      firstCorrect: rec.first_correct, total: rec.first_total, xp: bonus,
-      words: dayWords(d), stamps: stampBoard(), say: sayText, fx,
+      name: callName(), day: d, theme: dayTheme(d), perfect, rounds: rec.test_rounds, review: isReviewDay(d),
+      firstCorrect: rec.first_correct, total: rec.first_total, xp: bonus, wordCount: dayWords(d).length,
+      words: isReviewDay(d) ? S.shuffle(dayWords(d)).slice(0, 7) : dayWords(d), stamps: stampBoard(), say: sayText, fx,
       onHome: () => endLesson(), onListen: () => { endLesson(false); st.listen.list = "today"; go("listen"); },
     });
   }

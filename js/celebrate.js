@@ -14,6 +14,9 @@ const TAP = ["Super!", "Awesome!", "Fantastic!", "You rock!", "Hooray!", "Great 
 export function celebrate(o) {
   document.querySelector(".feedback")?.remove();
   const ratio = o.total ? o.firstCorrect / o.total : 1;
+  const head = o.review ? pick(o.perfect ? ["복습 테스트 만점!", "5일치 단어 완벽 마스터!"] : ["5일치 단어 마스터!", "복습까지 끝! 최고야!"])
+    : pick(o.perfect ? HEAD_PERFECT : HEAD_PASS);
+  const sub = o.review ? `지난 5일 동안 배운 단어 ${o.wordCount}개를 다 기억했어! 🌟` : pick(o.perfect ? SUB_PERFECT : SUB_PASS);
   const stars = o.perfect ? 3 : ratio >= 0.7 ? 2 : 1;
   const el = document.createElement("div");
   el.className = "party" + (o.perfect ? " perfect" : "");
@@ -27,12 +30,12 @@ export function celebrate(o) {
         <span class="spark s1">✨</span><span class="spark s2">⭐</span><span class="spark s3">✨</span>
       </button>
       <p class="party-name">${esc(o.name)}!</p>
-      <h1 class="party-head">${esc(pick(o.perfect ? HEAD_PERFECT : HEAD_PASS))}</h1>
-      <p class="party-sub">${esc(pick(o.perfect ? SUB_PERFECT : SUB_PASS))}</p>
+      <h1 class="party-head">${esc(head)}</h1>
+      <p class="party-sub">${esc(sub)}</p>
       <div class="party-stars" aria-label="별 ${stars}개">${[1, 2, 3].map((i) =>
         `<span class="pstar ${i <= stars ? "on" : ""}" style="--d:${0.35 + i * 0.28}s">★</span>`).join("")}</div>
       <div class="party-row">
-        <div class="stamp" style="--d:1.45s"><small>DAY</small><b>${o.day}</b><span>통과</span></div>
+        <div class="stamp ${o.review ? "rv" : ""}" style="--d:1.45s"><small>DAY</small><b>${o.day}</b><span>${o.review ? "복습 통과" : "통과"}</span></div>
         <div class="party-facts">
           <div><span>오늘 주제</span><b>${esc(o.theme)}</b></div>
           <div><span>첫 도전</span><b>${o.firstCorrect}/${o.total} 정답</b></div>

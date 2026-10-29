@@ -95,12 +95,14 @@ create table if not exists rewards (
 );
 
 -- ---------------------------------------------------------------------
--- 6. Day 진행 (하루 7개 묶음) — 반복 학습 → 테스트를 모두 맞혀야 통과
+-- 6. Day 진행 — 학습 Day(7개) 5일 → 복습 Day(35개) 1일. 반복 학습 → 테스트를 모두 맞혀야 통과
 -- ---------------------------------------------------------------------
 create table if not exists day_progress (
   learner_id    uuid not null references learners(id) on delete cascade,
-  day           smallint not null,                 -- Day 1 ~ 30
+  day           smallint not null,                 -- Day 1 ~ 36 (학습 5일 + 복습 Day 1일 반복)
+  kind          text not null default 'learn' check (kind in ('learn','review')),
   word_ids      text[] not null,
+  warmup_at     timestamptz,                       -- 어제 단어 워밍업 복습 끝낸 시각
   status        text not null default 'learning'
                 check (status in ('learning','testing','passed')),
   started_at    timestamptz,

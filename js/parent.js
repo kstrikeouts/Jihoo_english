@@ -50,7 +50,7 @@ async function load() {
   const words = (await Promise.all(CONFIG.WORD_FILES.map((f) => fetch(f).then((r) => r.json())))).flatMap((l) => l.words);
   const [progress, sessions, answers, rewards, days] = await Promise.all([
     DB.loadProgress(), DB.loadSessions(), DB.loadAnswers(120), DB.loadRewards(), DB.loadDays()]);
-  D = { words, byId: Object.fromEntries(words.map((w) => [w.id, w])), progress, sessions, answers, rewards, days, loadedAt: new Date() };
+  D = { words, sched: S.buildSchedule(words), byId: Object.fromEntries(words.map((w) => [w.id, w])), progress, sessions, answers, rewards, days, loadedAt: new Date() };
   const pin = DB.learner.parent_pin;
   if (pin && ss.get("je.pin") !== pin) return pinGate(pin);
   render();
@@ -98,7 +98,7 @@ function render() {
   const due = S.dueList(D.progress, 999).length;
   const L = DB.learner;
   const passedN = Object.values(D.days).filter((r) => r.status === "passed").length;
-  const lastDay = Math.max(0, ...D.words.map((w) => w.day || 0));
+  const lastDay = D.sched.length;
   const testQ = D.answers.filter((a) => a.phase === "test" && inWeek(S.kstDate(a.answered_at), thisWeek));
 
   $app.innerHTML = `
@@ -124,7 +124,7 @@ function render() {
     <h2>학습 달력 <small>최근 12주</small></h2>
     <div class="card">${calendar(days, today)}</div>
 
-    <h2>Day 진도 <small>하루 7개 · 테스트를 모두 맞혀야 통과</small></h2>
+    <h2>Day 진도 <small>학습 5일 + 복습 Day 1일 · 테스트를 모두 맞혀야 통과</small></h2>
     <div class="card">${dayTable(lastDay)}</div>
 
     <h2>단어 진도 <small>상자가 높을수록 오래 기억</small></h2>
@@ -291,7 +291,7 @@ function todayBanner(today, lastDay) {
   const passedToday = recs.find((r) => r.passed_at && S.kstDate(r.passed_at) === today);
   let cur = null;
   for (let d = 1; d <= lastDay; d++) if (D.days[d]?.status !== "passed") { cur = d; break; }
-  const theme = (d) => D.words.find((w) => w.day === d)?.theme || "";
+  const theme = (d) => D.sched[d - 1]?.theme || "";
   let icon, title, sub;
   if (passedToday) {
     const r = passedToday, perfect = r.first_correct === r.first_total;
@@ -310,15 +310,16 @@ function todayBanner(today, lastDay) {
 }
 function kstTime(iso) { const t = kst(iso); return `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`; }
 function dayTable(lastDay) {
-  const theme = (d) => D.words.find((w) => w.day === d)?.theme || "";
+  const theme = (d) => D.sched[d - 1]?.theme || "";
   const cells = Array.from({ length: lastDay }, (_, i) => {
     const r = D.days[i + 1];
     const bg = r?.status === "passed" ? (r.first_correct === r.first_total ? "var(--yellow)" : "var(--mint)") : r ? "var(--seq-2)" : "var(--seq-0)";
-    return `<span title="Day ${i + 1}" style="aspect-ratio:1;border-radius:6px;background:${bg};display:grid;place-items:center;font-size:11px;color:${r?.status === "passed" ? "#fff" : "var(--muted)"}">${i + 1}</span>`;
+    const rv = D.sched[i]?.kind === "review";
+    return `<span title="Day ${i + 1}${rv ? " 복습" : ""}" style="min-width:0;aspect-ratio:1;border-radius:${rv ? "50%" : "6px"};background:${bg};display:grid;place-items:center;font-size:11px;color:${r?.status === "passed" ? "#fff" : "var(--muted)"};${rv && r?.status !== "passed" ? "outline:2px solid #F2C45A;outline-offset:-2px" : ""}">${rv ? "🌟" : i + 1}</span>`;
   }).join("");
   const rows = Object.values(D.days).filter((r) => r.started_at).sort((a, b) => b.day - a.day).slice(0, 14);
-  return `<div style="display:grid;grid-template-columns:repeat(10,1fr);gap:4px">${cells}</div>
-    <div class="legend" style="margin:10px 0 4px"><span><i style="background:var(--yellow)"></i>한 번에 통과</span><span><i style="background:var(--mint)"></i>재도전 후 통과</span><span><i style="background:var(--seq-2)"></i>진행 중</span></div>
+  return `<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;max-width:360px">${cells}</div>
+    <div class="legend" style="margin:10px 0 4px"><span><i style="background:var(--yellow)"></i>한 번에 통과</span><span><i style="background:var(--mint)"></i>재도전 후 통과</span><span><i style="background:var(--seq-2)"></i>진행 중</span><span>🌟 복습 Day</span></div>
     ${rows.length ? `<table class="t"><tr><th>Day</th><th>주제</th><th>상태</th><th style="text-align:right">첫 테스트</th><th style="text-align:right">도전</th></tr>
     ${rows.map((r) => `<tr><td>${r.day}</td><td>${esc(theme(r.day))}</td>
       <td><span class="tag ${DSTATUS[r.status]?.[1] || ""}">${DSTATUS[r.status]?.[0] || r.status}</span>${r.passed_at ? ` <span class="muted" style="font-size:12px">${md(S.kstDate(r.passed_at))}</span>` : ""}</td>
@@ -350,7 +351,7 @@ function rewardsBlock(streak, grad) {
 function settingsBlock() {
   const L = DB.learner;
   const seg = (name, opts, cur) => `<div class="seg" data-set="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${v == cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
-  return `<div class="field"><label>하루 학습량</label><p style="font-size:15px">하루 7개 (Day 1~30, 4학년 단어·숙어 210개)</p></div>
+  return `<div class="field"><label>하루 학습량</label><p style="font-size:15px">학습 Day 하루 7개 → 5일마다 복습 Day (Day 1~36, 4학년 단어·숙어 210개). 학습 Day는 어제 단어 복습으로 시작</p></div>
     <div class="field"><label>학년</label>${seg("grade", [[3, "3학년"], [4, "4학년"], [5, "5학년"], [6, "6학년"]], L.grade)}</div>
     <div class="field"><label>부모 화면 비밀번호 (숫자 4자리 · 아이가 설정을 바꾸지 않도록)</label>
       <div class="row"><input class="input" id="pinset" type="password" inputmode="numeric" maxlength="4" placeholder="${L.parent_pin ? "설정됨 — 바꾸려면 입력" : "설정 안 됨"}">
