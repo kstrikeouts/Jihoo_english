@@ -20,7 +20,8 @@ export async function loadAudioManifest() {
 }
 export const hasMp3 = (id) => !!(manifest && manifest[id]);
 export const mp3Count = () => (manifest ? Object.keys(manifest).length : 0);
-export const mp3Url = (id, v) => `audio/${id}_${v}.mp3`;
+// 음성이 다시 만들어지면 주소가 바뀌도록 버전(해시)을 붙임 → 예전 음성이 폰에 남아 재생되지 않음
+export const mp3Url = (id, v) => `audio/${id}_${v}.mp3?h=${manifest?.[id] || ""}`;
 
 // ── 기기 음성(TTS) ──────────────────────────────────────────
 let voices = [];
@@ -28,7 +29,10 @@ const loadVoices = () => { voices = speechSynthesis?.getVoices?.() || []; };
 if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
 function pickVoice(lang) {
   // 성인 남성 목소리 우선 (아이폰: Aaron·Fred·Nathan·Evan / 한국어: Minsu)
-  const pref = lang === "en" ? ["Aaron", "Nathan", "Evan", "Fred", "Alex", "Tom", "Daniel"] : ["Minsu", "Jian", "Suhyun", "Yuna"];
+  // 성인 남성 목소리 우선 — 아이폰(Aaron·Nathan·Evan), 윈도우(Guy·Andrew·David·Mark), 안드로이드/크롬
+  const pref = lang === "en"
+    ? ["Aaron", "Nathan", "Evan", "Guy", "Andrew", "Christopher", "David", "Mark", "Fred", "Alex", "Tom", "Google US English Male", "en-us-x-iol", "en-us-x-tpd"]
+    : ["Minsu", "InJoon", "Hyunsu", "Jian", "ko-kr-x-koc", "ko-kr-x-kod", "Yuna"];
   const list = voices.filter((v) => v.lang.replace("_", "-").startsWith(lang === "en" ? "en-US" : "ko"));
   return pref.map((n) => list.find((v) => v.name.includes(n))).find(Boolean) || list[0] || null;
 }

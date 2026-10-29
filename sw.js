@@ -1,8 +1,8 @@
 // 오프라인 지원 — 지하철에서도 앱과 음성이 동작하도록
 // 앱 파일을 고치면 VERSION 숫자를 올려 주세요 (새 버전이 폰에 반영됨)
-const VERSION = "je-v6";
+const VERSION = "je-v7";
 const SHELL = `${VERSION}-shell`;
-const AUDIO = "je-audio";       // 음성 파일은 버전과 무관하게 유지
+const AUDIO = "je-audio-2";     // 음성 파일 저장소 (주소의 ?h= 버전이 바뀌면 새로 받음)
 const RUNTIME = "je-runtime";   // 글꼴·라이브러리
 const SHELL_FILES = [
   "./", "index.html", "parent.html", "css/style.css", "manifest.json",
@@ -15,7 +15,7 @@ self.addEventListener("install", (e) => {
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k.endsWith("-shell") && k !== SHELL).map((k) => caches.delete(k))))
+    .then((keys) => Promise.all(keys.filter((k) => (k.endsWith("-shell") && k !== SHELL) || (k.startsWith("je-audio") && k !== AUDIO)).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
@@ -55,11 +55,11 @@ async function cacheFirst(req, name) {
 // 음성: 한 번 들은 파일은 저장. 아이폰 사파리는 오디오를 Range 요청으로 가져오므로 206 응답을 직접 만들어 줌
 async function audioResponse(req) {
   const cache = await caches.open(AUDIO);
-  const key = req.url.split("?")[0];
+  const key = req.url; // ?h=버전 포함 — 음성이 바뀌면 새 파일로 받음
   let res = await cache.match(key);
   if (!res) {
     try {
-      const net = await fetch(key);
+      const net = await fetch(key, { cache: "reload" });
       if (!net.ok) return net;
       await cache.put(key, net.clone());
       res = net;

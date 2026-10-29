@@ -3,7 +3,7 @@
 import { CONFIG } from "./config.js";
 import { DB } from "./db.js";
 import * as S from "./srs.js";
-import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count } from "./audio.js";
+import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url } from "./audio.js";
 import { canRecognize, listenOnce, scoreSpeech, scoreSentence, normalize } from "./speech.js";
 import { ask } from "./ui.js";
 import { celebrate } from "./celebrate.js";
@@ -948,7 +948,7 @@ async function prefetchAudio() {
   const urls = new Set();
   for (const l of playlists()) {
     if (!["today", "due", "week", "preview"].includes(l.key)) continue;
-    for (const w of l.words) for (const v of ["w", "x", "ek", "ke", "ex"]) urls.add(`audio/${w.id}_${v}.mp3`);
+    for (const w of l.words) for (const v of ["w", "x", "ek", "ke", "ex"]) urls.add(mp3Url(w.id, v));
   }
   const btn = document.getElementById("dl");
   let n = 0;
