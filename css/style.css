@@ -384,3 +384,16 @@ p.muted, .muted { line-height: 1.45; }
 .sbtn { justify-content: center; padding: 0 8px; font-size: 18px; white-space: nowrap; }
 .wordcard .ex .snd { margin: 12px 0 0; max-width: none; }
 .steps li { font-size: 19px; }
+
+/* ── 따라하기 5번 ─────────────────────────────── */
+.intro-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.intro-head .phase { margin: 0; }
+.prev-btn { font-size: 17px; color: var(--sky-d); background: var(--card); border: 2px solid #BFE0FF; border-radius: 999px; padding: 8px 14px; white-space: nowrap; }
+.repeat-box { text-align: center; margin-top: 14px; }
+.rep-label { font-size: 19px; margin-bottom: 8px; }
+.reps { display: flex; justify-content: center; gap: 10px; }
+.reps span { width: 30px; height: 30px; border-radius: 50%; border: 3px solid #E3D6C2; background: #fff; transition: transform .2s; }
+.reps span.on { background: var(--mint); border-color: var(--mint-d); transform: scale(1.12); }
+.reps span.on::after { content: "✓"; color: #fff; font-size: 18px; line-height: 24px; display: block; }
+.btn.ready { animation: pulse 1.2s infinite; }
+.wordcard .emoji { font-size: 80px; }

@@ -379,6 +379,8 @@ function learnPhase(d, relearn) {
   });
 }
 
+const REPEAT_NEED = 5; // 정확한 발음으로 따라하기 5번 해야 다음 단어로
+
 function stepIntro(step, w) {
   // 처음 보는 순간 진도에 등록 → 중간에 그만둬도 복습에 나옴
   if (!st.progress[w.id]) {
@@ -386,9 +388,15 @@ function stepIntro(step, w) {
     st.progress[w.id] = p; DB.saveProgress(p);
     st.L.session.new_words++; st.L.session.xp += 5; saveSess(st.L.session);
   }
+  const L = st.L;
+  L.reps = L.reps || {};                 // 단어별 정확하게 따라한 횟수 (이전으로 돌아와도 유지)
   const en = S.spoken(w);
-  const n = st.L.steps.filter((s) => s.type === "intro").indexOf(step) + 1;
-  lessonFrame(`<p class="phase">새 단어 ${n}/${st.L.steps.filter((s) => s.type === "intro").length}${w.type === "idiom" ? " · 숙어" : ""}</p>
+  const intros = L.steps.filter((s) => s.type === "intro");
+  const n = intros.indexOf(step) + 1;
+  const prevIsIntro = L.steps[L.i - 1]?.type === "intro";
+  const selfMode = !canRecognize || st.srBroken; // 마이크가 안 되면 스스로 세기
+  lessonFrame(`<div class="intro-head"><p class="phase">새 단어 ${n}/${intros.length}${w.type === "idiom" ? " · 숙어" : ""}</p>
+      ${prevIsIntro ? `<button class="prev-btn" id="prev">◀ 이전 단어</button>` : ""}</div>
     <div class="card wordcard">
       <div class="emoji">${w.emoji}</div>
       <div class="word ${en.length > 10 ? "long" : ""}">${esc(en)}</div>
@@ -397,32 +405,74 @@ function stepIntro(step, w) {
       <div class="ex"><div class="ex-label">예문</div><div class="en">${esc(w.example)}</div><div class="ko">${esc(w.example_ko)}</div>
         ${sndBtns("x", "문장 듣기")}</div>
     </div>
-    <div class="stars" id="stars" style="margin-top:10px"></div><div class="heard" id="heard"></div>
+    <div class="repeat-box">
+      <p class="rep-label" id="repLabel"></p>
+      <div class="reps" id="reps">${Array.from({ length: REPEAT_NEED }, () => "<span></span>").join("")}</div>
+      <div class="stars" id="stars"></div><div class="heard" id="heard">${selfMode
+        ? "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말할 때마다 버튼을 눌러요"
+        : "🎤 버튼을 누르고 단어를 또박또박 말해요"}</div>
+    </div>
     <div class="row" style="margin-top:8px">
-      <button class="btn ghost" id="mic">🎤 따라하기</button>
+      <button class="btn ${selfMode ? "ghost" : "sky"}" id="mic">${selfMode ? "🗣️ 말했어요" : "🎤 따라하기"}</button>
       <button class="btn" id="go">다음 ▶</button></div>`);
   st.L.sayT = setTimeout(() => say(w, "w"), 500); // 화면이 뜨고 잠깐 뒤 재생 (첫소리 뭉개짐 방지)
   bindSnd(w);
-  document.getElementById("go").onclick = () => { stopAll(); nextStep(); };
-  document.getElementById("mic").onclick = () => speakAttempt(w, en);
+  const drawReps = () => {
+    const c = Math.min(REPEAT_NEED, L.reps[w.id] || 0);
+    document.querySelectorAll("#reps span").forEach((el, i) => el.classList.toggle("on", i < c));
+    const done = c >= REPEAT_NEED;
+    document.getElementById("repLabel").textContent = done
+      ? "완벽해요! 다음 단어로 가요 🎉"
+      : `정확하게 ${REPEAT_NEED}번 따라하면 다음으로! (${c}/${REPEAT_NEED})`;
+    const go = document.getElementById("go");
+    go.disabled = !done;
+    go.classList.toggle("ready", done);
+  };
+  drawReps();
+  document.getElementById("prev")?.addEventListener("click", () => { stopAll(); clearTimeout(L.sayT); L.i--; renderStep(); });
+  document.getElementById("go").onclick = () => {
+    if ((L.reps[w.id] || 0) < REPEAT_NEED) return;
+    stopAll(); nextStep();
+  };
+  document.getElementById("mic").onclick = async () => {
+    if ((L.reps[w.id] || 0) >= REPEAT_NEED) return;
+    const ok = await speakAttempt(w, en);
+    if (ok) {
+      L.reps[w.id] = (L.reps[w.id] || 0) + 1;
+      drawReps();
+      if (L.reps[w.id] >= REPEAT_NEED) { fx("win"); L.session.xp += 3; saveSess(L.session); }
+    }
+    if (st.srBroken && !document.getElementById("mic").textContent.includes("말했어요")) {
+      // 마이크가 꺼진 걸 처음 알게 되면 스스로 세기 방식으로 바꿈
+      const mic = document.getElementById("mic");
+      mic.textContent = "🗣️ 말했어요"; mic.classList.remove("sky"); mic.classList.add("ghost");
+    }
+  };
 }
 
-// 따라 말하기 — 인식이 되면 별점, 안 되면 칭찬만
+// 따라 말하기 — 정확하면(⭐3) true. 마이크가 안 되면 스스로 말했다고 누른 것을 인정
 async function speakAttempt(w, targetText) {
   const stars = document.getElementById("stars"), heard = document.getElementById("heard"), mic = document.getElementById("mic");
-  if (!canRecognize || st.srBroken) { stars.textContent = "👏"; heard.textContent = "소리 내어 말해 봤죠? 잘했어요!"; return; }
+  if (!canRecognize || st.srBroken) {
+    stars.textContent = "👏"; heard.textContent = "잘했어요! 한 번 더 소리 내어 말해 봐요";
+    fx("ok");
+    return true;
+  }
   stopAll();
   mic.classList.add("on"); heard.textContent = "듣고 있어요… 말해 보세요!";
   try {
     const r = scoreSpeech(targetText, await listenOnce());
     stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
-    heard.textContent = `"${r.transcript}" 라고 들렸어요`;
-    record(w, { mode: "speak", phase: "practice", correct: r.score >= 2, score: r.score, transcript: r.transcript });
-    if (r.score >= 2) fx("ok");
+    const ok = r.score >= 3;
+    heard.textContent = ok ? `"${r.transcript}" — 정확해요! 👍` : `"${r.transcript}" 라고 들렸어요. 다시 또박또박!`;
+    record(w, { mode: "speak", phase: "practice", correct: ok, score: r.score, transcript: r.transcript });
+    if (ok) fx("ok");
+    return ok;
   } catch (e) {
     if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
-      st.srBroken = true; heard.textContent = "마이크가 꺼져 있어요. 소리 내어 말해 보기만 해도 돼요!";
+      st.srBroken = true; heard.textContent = "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말할 때마다 버튼을 눌러요";
     } else heard.textContent = "잘 안 들렸어요. 한 번 더 눌러 볼까요?";
+    return false;
   } finally { mic.classList.remove("on"); }
 }
 
