@@ -22,14 +22,17 @@ EXCEPT = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "s
 IRREG = {"teeth": "tooth", "feet": "foot", "children": "child", "men": "man", "women": "woman", "mice": "mouse",
          "went": "go", "ate": "eat", "saw": "see", "got": "get", "was": "be", "were": "be", "is": "be", "am": "be", "are": "be",
          "bought": "buy", "made": "make", "flew": "fly", "ran": "run", "began": "begin", "drew": "draw", "wrote": "write",
-         "caught": "catch", "threw": "throw", "rode": "ride", "an": "a", "i'm": "i", "doing": "do", "has": "have", "had": "have"}
+         "caught": "catch", "better": "good", "best": "good", "worse": "bad", "worst": "bad", "threw": "throw", "rode": "ride", "an": "a", "i'm": "i", "doing": "do", "has": "have", "had": "have"}
 INFL = ["", "s", "es", "ed", "d", "ing"]
 DERIV = ["er", "or", "y", "ly", "ful", "less", "ness", "ment", "ish", "ist", "ian", "en", "ty", "th", "al", "ion", "tion", "ation",
          "able", "ible", "ive", "ous", "ic", "est", "ier", "iest", "ily"]
 PREF = ["un", "dis", "re", "in", "im", "non", "mis", "pre"]
 
-def stems(w):
+SPECIAL = {"scientist": "science", "scientific": "science"}
+
+def stems(w, depth=2):
     out = {w}
+    if w in SPECIAL: out.add(SPECIAL[w])
     if w in IRREG: out.add(IRREG[w])
     for suf in INFL + DERIV:
         if suf and w.endswith(suf) and len(w) - len(suf) >= 2:
@@ -39,16 +42,19 @@ def stems(w):
             if len(b) > 2 and b[-1] == b[-2]: out.add(b[:-1])
     for p in PREF:
         if w.startswith(p) and len(w) - len(p) >= 3: out.add(w[len(p):])
+    if depth > 1:  # 접사가 두 번 붙은 말 (congratulations = congratulate + ion + s)
+        for b in list(out - {w}):
+            out |= stems(b, depth - 1)
     return out
 
 def classify(token, alls):
-    t = token.lower().strip("'")
+    t = token.lower().strip("'").split("'")[0]  # 줄임말: that's → that
     if t in EXCEPT: return "예외"
     if t in alls or (t in IRREG and IRREG[t] in alls): return "목록"
     if any(s in alls for s in stems(t) if s != t):
         direct = any(t == s + x or t == s + "e" + x[1:] for s in alls for x in INFL if x)
         return "목록" if direct else "파생"
-    for i in range(3, len(t) - 2):  # 합성어: 앞뒤 모두 목록 단어
+    for i in range(2, len(t) - 1):  # 합성어: 앞뒤 모두 목록 단어 (maybe = may + be)
         a, b = t[:i], t[i:]
         if (a in alls or stems(a) & alls) and (b in alls or stems(b) & alls): return "합성"
     return "밖"

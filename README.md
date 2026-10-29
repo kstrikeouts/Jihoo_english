@@ -17,10 +17,12 @@ js/db.js              Supabase 연동 + 오프라인 전송 대기열
 js/audio.js           음성 재생 + 듣기 반복 모드 (잠금화면 재생)
 js/speech.js          발음 인식 채점
 js/parent.js          부모 대시보드
-data/words_g4.json    4학년 단어·숙어 210개 (Day 1~30, 하루 7개)
+data/words_g4.json    4학년 단어·숙어 210개 (학습 Day 30 + 복습 Day 6 = Day 1~36)
+data/words_g5.json    5학년 210개 (Day 37~72)
+data/words_g6.json    6학년 210개 (Day 73~108)
 data/source/kice_2022_elementary.txt  교육과정 초등 권장 어휘 목록(800개, * 표시) — 단어 선정 기준
 tools/check_kice.py  단어장이 초등 권장 어휘 안에 있는지 검사
-tools/make_words_g4.py 단어장 원본 — 고친 뒤 실행하면 words_g4.json 이 다시 만들어짐
+tools/make_words_g4~6.py 학년별 단어장 원본 — 고친 뒤 실행하면 words_gN.json 이 다시 만들어짐 (중복·교육과정 어휘 자동 검사)
 audio/                음성 MP3 (GitHub Actions 가 자동 생성 — 직접 넣지 않음)
 tools/build_audio.py  음성 생성 스크립트
 supabase/schema.sql   DB 테이블·보안 정책
@@ -74,7 +76,7 @@ SUPABASE_ANON_KEY: "eyJhbGciOi...",
 - ⚠️ 홈 화면 앱에서 잠금 시 소리가 멈추면 **Safari 에서 열어** 듣기 모드를 쓰세요 (iOS 버전에 따라 다름)
 - 듣기는 복습 상자를 움직이지 않고 **듣기 시간만 기록**됩니다
 
-## 학습 일정 (Day 1~36)
+## 학습 일정 (Day 1~108 = 4·5·6학년, 학년마다 36일)
 **학습 Day 5일 → 복습 Day 1일**을 반복합니다. (Day 6·12·18·24·30·36 = 🌟 복습 Day)
 
 ### 학습 Day (하루 7개)

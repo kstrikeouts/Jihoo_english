@@ -170,10 +170,14 @@ function statusbar() {
     <span class="sync" id="sync">${syncText()}</span></div>`;
 }
 
-function stampBoard(highlight) {
-  const n = lastDay();
-  return `<div class="stamps">${Array.from({ length: n }, (_, i) => {
-    const d = i + 1, r = st.days[d];
+// 학년별 도장판: 한 학년 = 학습 30일 + 복습 6일 = 36칸
+const BLOCK = 36;
+const gradeOf = (d) => (sched(d)?.words[0]?.id || "g4").split("-")[0].replace("g", "") + "학년";
+function blockOf(d) { const b = Math.floor((Math.max(1, d) - 1) / BLOCK); return { from: b * BLOCK + 1, to: Math.min(lastDay(), (b + 1) * BLOCK) }; }
+function stampBoard(highlight, around = highlight) {
+  const { from, to } = blockOf(around || currentDay() || lastDay());
+  return `<div class="stamps">${Array.from({ length: to - from + 1 }, (_, i) => {
+    const d = from + i, r = st.days[d];
     const rv = isReviewDay(d);
     const passed = r?.status === "passed", perfect = passed && r.first_correct === r.first_total;
     const cls = [passed ? (perfect ? "on perfect" : "on") : d === highlight ? "cur" : "", rv ? "rv" : ""].join(" ");
@@ -203,7 +207,7 @@ function renderHome() {
       </div></section>`;
   } else if (!d) {
     main = `<section class="card mission today-done"><div class="td-medal">👑</div>
-      <p class="td-title">4학년 단어장 완주!</p><p class="muted">${lastDay()}일 동안 ${st.words.length}개를 모두 통과했어요</p>
+      <p class="td-title">4·5·6학년 단어장 완주! 🎓</p><p class="muted">${lastDay()}일 동안 ${st.words.length}개를 모두 통과했어요</p>
       ${due ? `<button class="btn" id="revOnly" style="margin-top:16px">🔁 복습 ${due}개 하기</button>` : ""}</section>`;
   } else {
     const rec = dayRec(d), ws = dayWords(d), rv = isReviewDay(d);
@@ -231,7 +235,8 @@ function renderHome() {
     <h1>${esc(callName())}, 안녕! 👋</h1>
     <p class="muted">레벨 ${lv} · 다음 레벨까지 ⭐ ${lv * 200 - totalXP()}</p>
     ${main}
-    <h2>도장판 <small class="muted" style="font-size:18px">${passed}/${lastDay()} Day</small></h2>
+    ${(() => { const b = blockOf(d || lastDay()); const n = passedDays().filter((r) => r.day >= b.from && r.day <= b.to).length;
+      return `<h2>${gradeOf(b.from)} 도장판 <small class="muted" style="font-size:18px">${n}/${b.to - b.from + 1} · 전체 ${passed}/${lastDay()} Day</small></h2>`; })()}
     <div class="card">${stampBoard(d)}<p class="stamp-note">5일 배우고, 6일째는 🌟 복습 Day</p></div>`;
   document.getElementById("startL")?.addEventListener("click", () => startToday());
   document.getElementById("reLearn")?.addEventListener("click", () => startToday({ relearn: true }));
@@ -623,7 +628,7 @@ function testRoundEnd(d) {
     return celebrate({
       name: callName(), day: d, theme: dayTheme(d), perfect, rounds: rec.test_rounds, review: isReviewDay(d),
       firstCorrect: rec.first_correct, total: rec.first_total, xp: bonus, wordCount: dayWords(d).length,
-      words: isReviewDay(d) ? S.shuffle(dayWords(d)).slice(0, 7) : dayWords(d), stamps: stampBoard(), say: sayText, fx,
+      words: isReviewDay(d) ? S.shuffle(dayWords(d)).slice(0, 7) : dayWords(d), stamps: stampBoard(null, d), say: sayText, fx,
       onHome: () => endLesson(), onListen: () => { endLesson(false); st.listen.list = "today"; go("listen"); },
     });
   }

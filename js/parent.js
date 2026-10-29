@@ -318,7 +318,15 @@ function dayTable(lastDay) {
     return `<span title="Day ${i + 1}${rv ? " 복습" : ""}" style="min-width:0;aspect-ratio:1;border-radius:${rv ? "50%" : "6px"};background:${bg};display:grid;place-items:center;font-size:11px;color:${r?.status === "passed" ? "#fff" : "var(--muted)"};${rv && r?.status !== "passed" ? "outline:2px solid #F2C45A;outline-offset:-2px" : ""}">${rv ? "🌟" : i + 1}</span>`;
   }).join("");
   const rows = Object.values(D.days).filter((r) => r.started_at).sort((a, b) => b.day - a.day).slice(0, 14);
-  return `<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;max-width:360px">${cells}</div>
+  // 학년별로 묶어서 (36칸 = 학습 30일 + 복습 6일)
+  const cellList = cells.split("</span>").filter(Boolean).map((x) => x + "</span>");
+  const blocks = [];
+  for (let b = 0; b * 36 < cellList.length; b++) {
+    const g = (D.sched[b * 36]?.words[0]?.id || "g4").split("-")[0].replace("g", "");
+    blocks.push(`<div style="min-width:0"><div style="font-size:13px;color:var(--muted);margin-bottom:4px">${g}학년</div>
+      <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px">${cellList.slice(b * 36, b * 36 + 36).join("")}</div></div>`);
+  }
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px">${blocks.join("")}</div>
     <div class="legend" style="margin:10px 0 4px"><span><i style="background:var(--yellow)"></i>한 번에 통과</span><span><i style="background:var(--mint)"></i>재도전 후 통과</span><span><i style="background:var(--seq-2)"></i>진행 중</span><span>🌟 복습 Day</span></div>
     ${rows.length ? `<table class="t"><tr><th>Day</th><th>주제</th><th>상태</th><th style="text-align:right">첫 테스트</th><th style="text-align:right">도전</th></tr>
     ${rows.map((r) => `<tr><td>${r.day}</td><td>${esc(theme(r.day))}</td>
@@ -351,7 +359,7 @@ function rewardsBlock(streak, grad) {
 function settingsBlock() {
   const L = DB.learner;
   const seg = (name, opts, cur) => `<div class="seg" data-set="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${v == cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
-  return `<div class="field"><label>하루 학습량</label><p style="font-size:15px">학습 Day 하루 7개 → 5일마다 복습 Day (Day 1~36, 4학년 단어·숙어 210개). 학습 Day는 어제 단어 복습으로 시작</p></div>
+  return `<div class="field"><label>하루 학습량</label><p style="font-size:15px">학습 Day 하루 7개 → 5일마다 복습 Day (Day 1~108: 4학년 1~36 · 5학년 37~72 · 6학년 73~108, 단어·숙어 630개). 학습 Day는 어제 단어 복습으로 시작</p></div>
     <div class="field"><label>학년</label>${seg("grade", [[3, "3학년"], [4, "4학년"], [5, "5학년"], [6, "6학년"]], L.grade)}</div>
     <div class="field"><label>부모 화면 비밀번호 (숫자 4자리 · 아이가 설정을 바꾸지 않도록)</label>
       <div class="row"><input class="input" id="pinset" type="password" inputmode="numeric" maxlength="4" placeholder="${L.parent_pin ? "설정됨 — 바꾸려면 입력" : "설정 안 됨"}">

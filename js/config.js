@@ -11,5 +11,5 @@ export const CONFIG = {
   DEFAULT_GRADE: 4,
   DAILY_NEW: 7,           // 하루 단어 수 (단어장이 Day 별 7개로 나뉘어 있음)
   REVIEW_CAP: 20,         // 하루 최대 복습 카드 수
-  WORD_FILES: ["data/words_g4.json"],
+  WORD_FILES: ["data/words_g4.json", "data/words_g5.json", "data/words_g6.json"], // 4학년 Day 1~36 → 5학년 37~72 → 6학년 73~108
 };
