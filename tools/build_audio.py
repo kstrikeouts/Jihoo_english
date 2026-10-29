@@ -23,7 +23,7 @@ MANIFEST = OUT / "manifest.json"
 VOICE_EN = "en-US-GuyNeural"     # 성인 남성 · 표준 미국 발음
 VOICE_KO = "ko-KR-InJoonNeural"  # 성인 남성 한국어
 RATE_EN = "-10%"                 # 또박또박 조금 느리게
-FORMAT_VERSION = 2               # 파일 구성이 바뀌면 숫자를 올려 전체 재생성
+FORMAT_VERSION = 3               # 파일 구성이 바뀌면 숫자를 올려 전체 재생성
 LEAD_MS = 500                    # 앞부분 무음 — 재생 시작 때 첫소리가 뭉개지지 않게
 CONCURRENCY = 4
 
@@ -101,6 +101,10 @@ async def build_word(w, tmp, sem):
     }
     for v, parts in recipes.items():
         await asyncio.to_thread(concat, parts, OUT / f"{wid}_{v}.mp3")
+    # 천천히 듣기용: 음 높이는 그대로, 속도만 0.75배
+    for v in ("w", "x"):
+        await asyncio.to_thread(subprocess.run, ["ffmpeg", "-y", "-loglevel", "error", "-i", str(OUT / f"{wid}_{v}.mp3"),
+            "-filter:a", "atempo=0.75", "-ac", "1", "-ar", "24000", "-b:a", "48k", str(OUT / f"{wid}_{v}s.mp3")], check=True)
     print(f"  ✓ {wid} {spoken(w)}")
 
 
@@ -113,7 +117,7 @@ async def main():
 
     todo = [w for w in words
             if old.get(w["id"]) != word_hash(w)
-            or not all((OUT / f"{w['id']}_{v}.mp3").exists() for v in ("w", "x", "ek", "ke", "ex"))]
+            or not all((OUT / f"{w['id']}_{v}.mp3").exists() for v in ("w", "x", "ek", "ke", "ex", "ws", "xs"))]
     print(f"단어 {len(words)}개 중 새로 만들 단어 {len(todo)}개")
 
     files = {w["id"]: old[w["id"]] for w in words if w["id"] in old and w not in todo}

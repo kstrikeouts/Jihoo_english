@@ -10,14 +10,15 @@ try { el.preservesPitch = true; } catch {}
 // iOS 16.4+: 무음 스위치와 상관없이 재생 + 백그라운드 재생 세션
 try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
 
-let manifest = null;
+let manifest = null, manifestVersion = 0;
 export async function loadAudioManifest() {
   try {
     const r = await fetch("audio/manifest.json", { cache: "no-cache" });
-    if (r.ok) manifest = (await r.json()).files || {};
+    if (r.ok) { const j = await r.json(); manifest = j.files || {}; manifestVersion = j.version || 0; }
   } catch {}
   return manifest;
 }
+const hasSlowFiles = () => manifestVersion >= 3; // 3판부터 천천히(ws·xs) 음성 파일이 따로 있음
 export const hasMp3 = (id) => !!(manifest && manifest[id]);
 export const mp3Count = () => (manifest ? Object.keys(manifest).length : 0);
 // 음성이 다시 만들어지면 주소가 바뀌도록 버전(해시)을 붙임 → 예전 음성이 폰에 남아 재생되지 않음
@@ -69,22 +70,77 @@ async function ttsVariant(w, v, rate) {
 }
 let ttsGen = 0; // stopAll() 때마다 증가 → 진행 중이던 기기 음성 시퀀스 중단
 
-// ── 퀴즈용 짧은 재생 ────────────────────────────────────────
-export function say(w, v = "w", rate = 1) {
-  stopAll();
-  if (hasMp3(w.id)) {
-    return new Promise((resolve) => {
-      el.onended = el.onerror = () => resolve();
-      el.src = mp3Url(w.id, v);
-      el.playbackRate = rate;
-      el.play().catch(() => ttsVariant(w, v, rate).then(resolve));
-    });
+// ── 퀴즈·카드용 짧은 재생: Web Audio 로 재생 ───────────────
+// <audio> 로 매번 파일을 바꿔 틀면 스피커·블루투스가 깨어나는 동안 첫소리(예: "I")가 묻힘.
+// 한 번 켠 오디오 출력을 계속 열어 두고(무음 신호 유지), 미리 풀어 둔 소리를 바로 재생한다.
+let wctx = null, keep = null, curSrc = null;
+export function audioCtx() {
+  if (!wctx) {
+    wctx = new (window.AudioContext || window.webkitAudioContext)();
+    // 거의 안 들리는 신호를 계속 흘려 출력 장치가 잠들지 않게 함
+    const g = wctx.createGain(); g.gain.value = 0.00001;
+    keep = wctx.createOscillator(); keep.frequency.value = 20; keep.connect(g).connect(wctx.destination); keep.start();
   }
-  return ttsVariant(w, v, rate);
+  return wctx;
+}
+async function ready() {
+  const c = audioCtx();
+  if (c.state !== "running") { try { await c.resume(); } catch {} await wait(150); } // 막 깨어났으면 잠깐 기다림
+  return c;
+}
+// 첫 터치 때 오디오를 미리 깨워 둠 (아이폰은 터치가 있어야 소리가 켜짐)
+["pointerdown", "touchend", "keydown"].forEach((ev) => addEventListener(ev, () => { try { audioCtx().resume(); } catch {} }, { passive: true }));
+
+const bufCache = new Map();
+function loadBuf(url) {
+  if (!bufCache.has(url)) {
+    bufCache.set(url, fetch(url).then((r) => { if (!r.ok) throw new Error("no file"); return r.arrayBuffer(); })
+      .then((ab) => new Promise((ok, no) => audioCtx().decodeAudioData(ab, ok, no)))
+      .catch((e) => { bufCache.delete(url); throw e; }));
+    if (bufCache.size > 80) bufCache.delete(bufCache.keys().next().value);
+  }
+  return bufCache.get(url);
+}
+export function preloadSay(w) { if (hasMp3(w.id)) ["w", "x"].forEach((v) => loadBuf(mp3Url(w.id, v)).catch(() => {})); }
+
+function playElement(url, rate) {
+  return new Promise((resolve) => {
+    el.onended = el.onerror = () => resolve();
+    el.src = url; el.playbackRate = rate;
+    el.play().catch(() => resolve());
+  });
+}
+
+export async function say(w, v = "w", rate = 1) {
+  stopAll();
+  window.__lastSay = `${w.id}_${v}`; // (테스트·디버그용) 마지막으로 재생한 소리
+  const g = ttsGen;
+  if (!hasMp3(w.id)) return ttsVariant(w, v, rate);
+  // 천천히: 음 높이가 그대로인 '천천히' 전용 파일 사용 (없으면 <audio> 속도 조절)
+  const slow = rate < 1 && (v === "w" || v === "x");
+  const file = slow && hasSlowFiles() ? v + "s" : v;
+  const elemRate = slow && !hasSlowFiles() ? rate : 1;
+  try {
+    if (elemRate !== 1) throw new Error("use element");
+    const [buf, c] = await Promise.all([loadBuf(mp3Url(w.id, file)), ready()]);
+    if (g !== ttsGen) return;
+    return await new Promise((resolve) => {
+      const src = c.createBufferSource();
+      src.buffer = buf; src.connect(c.destination);
+      src.onended = () => { if (curSrc === src) curSrc = null; resolve(); };
+      curSrc = src;
+      src.start(c.currentTime + 0.03);
+    });
+  } catch {
+    if (g !== ttsGen) return;
+    return playElement(mp3Url(w.id, file), elemRate);
+  }
 }
 export function sayText(text, lang = "en") { stopAll(); return ttsOne(text, lang); }
 export function stopAll() {
   ttsGen++;
+  try { curSrc?.stop(); } catch {}
+  curSrc = null;
   el.onended = el.onerror = null;
   try { el.pause(); } catch {}
   try { speechSynthesis.cancel(); } catch {}

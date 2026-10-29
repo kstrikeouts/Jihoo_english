@@ -3,7 +3,7 @@
 import { CONFIG } from "./config.js";
 import { DB } from "./db.js";
 import * as S from "./srs.js";
-import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3 } from "./audio.js";
+import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3, preloadSay } from "./audio.js";
 import * as P from "./pitch.js";
 import { canRecognize, listenOnce, scoreSpeech, scoreSentence, normalize } from "./speech.js";
 import { ask } from "./ui.js";
@@ -471,6 +471,7 @@ function stepIntro(step, w) {
     st.L.session.new_words++; st.L.session.xp += 5; saveSess(st.L.session);
   }
   const L = st.L;
+  preloadSay(w); const nx = st.byId[L.steps[L.i + 1]?.id]; if (nx) preloadSay(nx); // 소리 미리 준비
   L.reps = L.reps || {};
   const done = (L.reps[w.id] = L.reps[w.id] || { w: false, x: false });
   const en = S.spoken(w);
@@ -533,6 +534,7 @@ function showSkip(fn) {
 // ── 한 번 더! 랜덤 발음 (첫 턴이 끝난 뒤 단어마다 한 번씩, 단어 또는 문장) ──
 function stepEcho(step, w) {
   const L = st.L;
+  preloadSay(w);
   const echoes = L.steps.filter((s) => s.type === "echo");
   const n = echoes.indexOf(step) + 1;
   const isW = step.kind === "w";
@@ -1086,6 +1088,7 @@ async function prefetchAudio() {
   for (const l of playlists()) {
     if (!["today", "due", "week", "preview"].includes(l.key)) continue;
     for (const w of l.words) for (const v of ["w", "x", "ek", "ke", "ex"]) urls.add(mp3Url(w.id, v));
+    for (const v of ["ws", "xs"]) urls.add(mp3Url(w.id, v));
   }
   const btn = document.getElementById("dl");
   let n = 0;
