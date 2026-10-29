@@ -18,6 +18,8 @@ js/audio.js           음성 재생 + 듣기 반복 모드 (잠금화면 재생)
 js/speech.js          발음 인식 채점
 js/parent.js          부모 대시보드
 data/words_g4.json    4학년 단어·숙어 210개 (Day 1~30, 하루 7개)
+data/source/kice_2022_elementary.txt  교육과정 초등 권장 어휘 목록(800개, * 표시) — 단어 선정 기준
+tools/check_kice.py  단어장이 초등 권장 어휘 안에 있는지 검사
 tools/make_words_g4.py 단어장 원본 — 고친 뒤 실행하면 words_g4.json 이 다시 만들어짐
 audio/                음성 MP3 (GitHub Actions 가 자동 생성 — 직접 넣지 않음)
 tools/build_audio.py  음성 생성 스크립트
