@@ -397,3 +397,22 @@ p.muted, .muted { line-height: 1.45; }
 .reps span.on::after { content: "✓"; color: #fff; font-size: 18px; line-height: 24px; display: block; }
 .btn.ready { animation: pulse 1.2s infinite; }
 .wordcard .emoji { font-size: 80px; }
+
+/* ── 따라하기: 단어 → 문장 + 억양·강세 그래프 ─────────── */
+.tasks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.task { text-align: center; padding: 10px 6px; border-radius: 14px; background: var(--card); border: 2px solid var(--line); font-size: 17px; color: var(--muted); }
+.task.now { border-color: var(--sky); color: var(--sky-d); background: #EEF7FF; }
+.task.ok { border-color: var(--mint); background: #E6F8F1; color: var(--mint-d); }
+.task.ok::before { content: "✓ "; }
+.speak-panel { margin-top: 10px; background: var(--card); border-radius: 18px; padding: 12px 12px 10px; box-shadow: var(--shadow); }
+.sp-task { font-size: 17px; margin-bottom: 8px; line-height: 1.4; }
+.sp-task b { font-family: var(--en); font-weight: 600; color: var(--ink); }
+.pgraph { display: block; width: 100%; height: 130px; background: #FFFCF6; border-radius: 12px; }
+.pg-legend { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 14px; color: var(--muted); flex-wrap: wrap; }
+.lg::before { content: ""; display: inline-block; width: 18px; height: 4px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.lg.ref::before { background: repeating-linear-gradient(90deg, #9A93B8 0 5px, transparent 5px 9px); }
+.lg.kid::before { background: #FF7A3D; }
+.pg-score { margin-left: auto; font-size: 15px; color: var(--ink); }
+.pg-score b { color: var(--primary-d); font-weight: 400; }
+.speak-panel .heard { margin-top: 8px; min-height: 24px; }
+.btn:disabled.sky { background: #D8D3CB; box-shadow: 0 5px 0 #C2BBB0; }

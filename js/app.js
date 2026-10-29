@@ -3,7 +3,8 @@
 import { CONFIG } from "./config.js";
 import { DB } from "./db.js";
 import * as S from "./srs.js";
-import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url } from "./audio.js";
+import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3 } from "./audio.js";
+import * as P from "./pitch.js";
 import { canRecognize, listenOnce, scoreSpeech, scoreSentence, normalize } from "./speech.js";
 import { ask } from "./ui.js";
 import { celebrate } from "./celebrate.js";
@@ -298,7 +299,7 @@ function nextStep() {
 function renderStep() {
   const step = st.L.steps[st.L.i];
   const w = st.byId[step.id];
-  ({ phase: stepPhase, intro: stepIntro, practice: stepQuiz, test: stepQuiz, review: stepQuiz, quiz: stepQuiz,
+  ({ phase: stepPhase, intro: stepIntro, echo: stepEcho, practice: stepQuiz, test: stepQuiz, review: stepQuiz, quiz: stepQuiz,
      testintro: stepTestIntro })[step.type](step, w);
 }
 
@@ -367,6 +368,8 @@ function learnPhase(d, relearn) {
   if (!relearn) {
     steps.push({ type: "phase", emoji: "✨", title: `Day ${d} · ${dayTheme(d)}`, sub: `오늘의 단어 ${ws.length}개를 만나요` });
     ws.forEach((w) => steps.push({ type: "intro", id: w.id }));
+    steps.push({ type: "phase", emoji: "🎲", title: "한 번 더! 랜덤 발음", sub: "단어나 문장이 무작위로 나와요. 정확하게 말하면 통과!" });
+    S.shuffle(ws).forEach((w) => steps.push({ type: "echo", id: w.id, kind: Math.random() < 0.5 ? "w" : "x" }));
   }
   steps.push({ type: "phase", emoji: "🔁", title: "반복 연습", sub: "모두 맞힐 때까지 연습해요. 틀려도 괜찮아요!" });
   for (const mode of ["listen_pick", "meaning_pick", "spell"]) {
@@ -379,22 +382,101 @@ function learnPhase(d, relearn) {
   });
 }
 
-const REPEAT_NEED = 5; // 정확한 발음으로 따라하기 5번 해야 다음 단어로
+// ═════════════ 따라 말하기: 정확도 판정 + 억양·강세 그래프 ═════════════
+const selfMode = () => !canRecognize || st.srBroken; // 마이크(받아쓰기)가 안 되면 스스로 체크
 
+function speakPanelHTML() {
+  return `<div class="speak-panel">
+      <div class="sp-task" id="spTask"></div>
+      <canvas class="pgraph" id="pgraph"></canvas>
+      <div class="pg-legend"><span class="lg ref">원어민</span><span class="lg kid">지후</span>
+        <span class="pg-score" id="pgScore">높낮이 = 억양 · 막대 = 강세</span></div>
+      <div class="heard" id="heard"></div>
+    </div>`;
+}
+
+// 한 번 말하기를 판정: 정확하면 true. 그래프는 말하는 동안 실시간으로 그려짐
+function makeSpeaker(w) {
+  const sp = { w, kind: "w", refShape: null, fails: 0 };
+  const canvas = () => document.getElementById("pgraph");
+  sp.setKind = async (kind) => {
+    sp.kind = kind; sp.refShape = null;
+    const c = canvas(); if (!c) return;
+    P.draw(c, {});
+    if (hasMp3(w.id)) {
+      const ref = await P.refContour(mp3Url(w.id, kind));
+      if (sp.kind !== kind || !document.body.contains(c)) return;
+      sp.refShape = P.shape(ref);
+      P.draw(c, { ref: sp.refShape });
+    }
+  };
+  sp.attempt = async () => {
+    const heard = document.getElementById("heard"), score = document.getElementById("pgScore"), mic = document.getElementById("mic");
+    if (selfMode()) { heard.textContent = "잘했어요! 👏"; fx("ok"); return true; }
+    stopAll(); clearTimeout(st.L?.sayT);
+    const target = sp.kind === "w" ? S.spoken(w) : w.example;
+    const liveMax = Math.max(sp.kind === "w" ? 2.5 : 4, (sp.refShape?.dur || 1) * 1.8);
+    let cap = null;
+    if (!st.graphOff && navigator.mediaDevices?.getUserMedia) {
+      cap = new P.LiveCapture((d) => { const c = canvas(); if (c) P.draw(c, { ref: sp.refShape, live: true, liveData: d, liveMax }); });
+      try { await cap.start(); } catch { cap = null; }
+    }
+    mic.classList.add("on"); heard.textContent = "듣고 있어요… 말해 보세요!";
+    let alts;
+    try {
+      try { alts = await listenOnce({ timeoutMs: sp.kind === "w" ? 6000 : 9000 }); }
+      catch (e) {
+        // 그래프용 마이크와 받아쓰기가 충돌하면 그래프를 끄고 한 번 더
+        if (cap && /audio-capture|aborted/.test(e.message)) {
+          cap.stop(); cap = null; st.graphOff = true;
+          heard.textContent = "다시 한 번 말해 보세요!";
+          alts = await listenOnce({ timeoutMs: sp.kind === "w" ? 6000 : 9000 });
+        } else throw e;
+      }
+    } catch (e) {
+      cap?.stop();
+      if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
+        st.srBroken = true; heard.textContent = "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말한 다음 버튼을 눌러요";
+        const m = document.getElementById("mic"); if (m) m.textContent = "🗣️ 말했어요";
+      } else heard.textContent = "잘 안 들렸어요. 한 번 더 눌러 볼까요?";
+      mic.classList.remove("on");
+      return false;
+    }
+    mic.classList.remove("on");
+    // 그래프 결과
+    const kidShape = cap ? P.shape(cap.stop()) : null;
+    const c = canvas();
+    if (c && (kidShape || sp.refShape)) P.draw(c, { ref: sp.refShape, kid: kidShape });
+    const cmp = P.compare(sp.refShape, kidShape);
+    if (score) score.innerHTML = cmp
+      ? `억양 <b>${cmp.tone ?? "–"}%</b> · 강세 <b>${cmp.stress}%</b>`
+      : kidShape ? "원어민 그래프는 음성 파일이 있을 때 나와요" : "높낮이 = 억양 · 막대 = 강세";
+    // 정확도 판정
+    let ok, transcript;
+    if (sp.kind === "w") { const r = scoreSpeech(target, alts); ok = r.score >= 3; transcript = r.transcript; }
+    else { const r = scoreSentence(target, alts, sentenceParts(w).keys); ok = r.pass; transcript = r.transcript; }
+    record(w, { mode: sp.kind === "w" ? "speak" : "chunk_speak", phase: "practice", correct: ok, score: ok ? 3 : 1, transcript });
+    if (ok) { fx("ok"); heard.textContent = `"${transcript}" — 정확해요! 👍`; sp.fails = 0; }
+    else { sp.fails++; heard.textContent = `"${transcript}" 라고 들렸어요. 다시 또박또박!`; }
+    return ok;
+  };
+  return sp;
+}
+
+// ── 새 단어 카드: 단어 1번 + 문장 1번 정확하게 따라하면 다음 ──
 function stepIntro(step, w) {
-  // 처음 보는 순간 진도에 등록 → 중간에 그만둬도 복습에 나옴
   if (!st.progress[w.id]) {
     const p = S.newProgress(DB.learner.id, w.id);
     st.progress[w.id] = p; DB.saveProgress(p);
     st.L.session.new_words++; st.L.session.xp += 5; saveSess(st.L.session);
   }
   const L = st.L;
-  L.reps = L.reps || {};                 // 단어별 정확하게 따라한 횟수 (이전으로 돌아와도 유지)
+  L.reps = L.reps || {};
+  const done = (L.reps[w.id] = L.reps[w.id] || { w: false, x: false });
   const en = S.spoken(w);
   const intros = L.steps.filter((s) => s.type === "intro");
   const n = intros.indexOf(step) + 1;
   const prevIsIntro = L.steps[L.i - 1]?.type === "intro";
-  const selfMode = !canRecognize || st.srBroken; // 마이크가 안 되면 스스로 세기
   lessonFrame(`<div class="intro-head"><p class="phase">새 단어 ${n}/${intros.length}${w.type === "idiom" ? " · 숙어" : ""}</p>
       ${prevIsIntro ? `<button class="prev-btn" id="prev">◀ 이전 단어</button>` : ""}</div>
     <div class="card wordcard">
@@ -405,75 +487,80 @@ function stepIntro(step, w) {
       <div class="ex"><div class="ex-label">예문</div><div class="en">${esc(w.example)}</div><div class="ko">${esc(w.example_ko)}</div>
         ${sndBtns("x", "문장 듣기")}</div>
     </div>
-    <div class="repeat-box">
-      <p class="rep-label" id="repLabel"></p>
-      <div class="reps" id="reps">${Array.from({ length: REPEAT_NEED }, () => "<span></span>").join("")}</div>
-      <div class="stars" id="stars"></div><div class="heard" id="heard">${selfMode
-        ? "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말할 때마다 버튼을 눌러요"
-        : "🎤 버튼을 누르고 단어를 또박또박 말해요"}</div>
-    </div>
+    <div class="tasks"><span class="task" id="tW">① 단어 따라하기</span><span class="task" id="tX">② 문장 따라하기</span></div>
+    ${speakPanelHTML()}
     <div class="row" style="margin-top:8px">
-      <button class="btn ${selfMode ? "ghost" : "sky"}" id="mic">${selfMode ? "🗣️ 말했어요" : "🎤 따라하기"}</button>
-      <button class="btn" id="go">다음 ▶</button></div>`);
-  st.L.sayT = setTimeout(() => say(w, "w"), 500); // 화면이 뜨고 잠깐 뒤 재생 (첫소리 뭉개짐 방지)
+      <button class="btn sky" id="mic">${selfMode() ? "🗣️ 말했어요" : "🎤 따라하기"}</button>
+      <button class="btn" id="go">다음 ▶</button></div>
+    <div id="skipBox" style="text-align:center;margin-top:10px"></div>`);
+  L.sayT = setTimeout(() => say(w, "w"), 500);
   bindSnd(w);
-  const drawReps = () => {
-    const c = Math.min(REPEAT_NEED, L.reps[w.id] || 0);
-    document.querySelectorAll("#reps span").forEach((el, i) => el.classList.toggle("on", i < c));
-    const done = c >= REPEAT_NEED;
-    document.getElementById("repLabel").textContent = done
-      ? "완벽해요! 다음 단어로 가요 🎉"
-      : `정확하게 ${REPEAT_NEED}번 따라하면 다음으로! (${c}/${REPEAT_NEED})`;
+  const sp = makeSpeaker(w);
+  const cur = () => (!done.w ? "w" : !done.x ? "x" : null);
+  const refresh = () => {
+    document.getElementById("tW").className = "task " + (done.w ? "ok" : cur() === "w" ? "now" : "");
+    document.getElementById("tX").className = "task " + (done.x ? "ok" : cur() === "x" ? "now" : "");
+    const k = cur();
+    document.getElementById("spTask").innerHTML = k === "w" ? `🎯 단어를 따라 말해요: <b>${esc(en)}</b>`
+      : k === "x" ? `🎯 이제 문장을 따라 말해요: <b>${esc(w.example)}</b>` : "🎉 완벽해요! 다음 단어로 가요";
     const go = document.getElementById("go");
-    go.disabled = !done;
-    go.classList.toggle("ready", done);
+    go.disabled = !!k; go.classList.toggle("ready", !k);
+    document.getElementById("mic").disabled = !k;
+    if (k && k !== sp.kind) sp.setKind(k);
   };
-  drawReps();
+  sp.setKind(cur() || "w");
+  refresh();
   document.getElementById("prev")?.addEventListener("click", () => { stopAll(); clearTimeout(L.sayT); L.i--; renderStep(); });
-  document.getElementById("go").onclick = () => {
-    if ((L.reps[w.id] || 0) < REPEAT_NEED) return;
-    stopAll(); nextStep();
-  };
+  document.getElementById("go").onclick = () => { if (cur()) return; stopAll(); nextStep(); };
   document.getElementById("mic").onclick = async () => {
-    if ((L.reps[w.id] || 0) >= REPEAT_NEED) return;
-    const ok = await speakAttempt(w, en);
-    if (ok) {
-      L.reps[w.id] = (L.reps[w.id] || 0) + 1;
-      drawReps();
-      if (L.reps[w.id] >= REPEAT_NEED) { fx("win"); L.session.xp += 3; saveSess(L.session); }
-    }
-    if (st.srBroken && !document.getElementById("mic").textContent.includes("말했어요")) {
-      // 마이크가 꺼진 걸 처음 알게 되면 스스로 세기 방식으로 바꿈
-      const mic = document.getElementById("mic");
-      mic.textContent = "🗣️ 말했어요"; mic.classList.remove("sky"); mic.classList.add("ghost");
-    }
+    const k = cur(); if (!k) return;
+    if (await sp.attempt()) {
+      done[k] = true;
+      if (!cur()) { fx("win"); L.session.xp += 2; saveSess(L.session); }
+      setTimeout(refresh, 600);
+    } else if (sp.fails >= 5) showSkip(() => { done[k] = true; refresh(); });
   };
 }
 
-// 따라 말하기 — 정확하면(⭐3) true. 마이크가 안 되면 스스로 말했다고 누른 것을 인정
-async function speakAttempt(w, targetText) {
-  const stars = document.getElementById("stars"), heard = document.getElementById("heard"), mic = document.getElementById("mic");
-  if (!canRecognize || st.srBroken) {
-    stars.textContent = "👏"; heard.textContent = "잘했어요! 한 번 더 소리 내어 말해 봐요";
-    fx("ok");
-    return true;
-  }
-  stopAll();
-  mic.classList.add("on"); heard.textContent = "듣고 있어요… 말해 보세요!";
-  try {
-    const r = scoreSpeech(targetText, await listenOnce());
-    stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
-    const ok = r.score >= 3;
-    heard.textContent = ok ? `"${r.transcript}" — 정확해요! 👍` : `"${r.transcript}" 라고 들렸어요. 다시 또박또박!`;
-    record(w, { mode: "speak", phase: "practice", correct: ok, score: r.score, transcript: r.transcript });
-    if (ok) fx("ok");
-    return ok;
-  } catch (e) {
-    if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
-      st.srBroken = true; heard.textContent = "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말할 때마다 버튼을 눌러요";
-    } else heard.textContent = "잘 안 들렸어요. 한 번 더 눌러 볼까요?";
-    return false;
-  } finally { mic.classList.remove("on"); }
+// 인식이 계속 안 될 때 막히지 않도록 (5번 실패 후)
+function showSkip(fn) {
+  const box = document.getElementById("skipBox");
+  if (!box || box.childElementCount) return;
+  box.innerHTML = `<button class="hint-btn" id="skipSay">계속 안 되면 다음에 다시 해요 ▶</button>`;
+  document.getElementById("skipSay").onclick = () => { box.innerHTML = ""; fn(); };
+}
+
+// ── 한 번 더! 랜덤 발음 (첫 턴이 끝난 뒤 단어마다 한 번씩, 단어 또는 문장) ──
+function stepEcho(step, w) {
+  const L = st.L;
+  const echoes = L.steps.filter((s) => s.type === "echo");
+  const n = echoes.indexOf(step) + 1;
+  const isW = step.kind === "w";
+  const shown = isW ? S.spoken(w) : w.example;
+  lessonFrame(`<p class="phase">한 번 더 · 랜덤 발음 ${n}/${echoes.length}</p>
+    <p class="prompt">${isW ? "이 단어를 말해 보세요" : "이 문장을 말해 보세요"}</p>
+    <div class="card wordcard" style="padding:18px">
+      <div class="emoji" style="font-size:60px">${w.emoji}</div>
+      ${isW ? `<div class="word ${shown.length > 10 ? "long" : ""}">${esc(shown)}</div><div class="meaning">${esc(w.meaning)}</div>`
+            : `<div class="pattern">${esc(shown)}</div><div class="muted" style="font-size:18px">${esc(w.example_ko)}</div>`}
+      ${sndBtns(step.kind, isW ? "단어 듣기" : "문장 듣기")}
+    </div>
+    ${speakPanelHTML()}
+    <button class="btn sky" id="mic" style="margin-top:8px">${selfMode() ? "🗣️ 말했어요" : "🎤 말하기"}</button>
+    <div id="skipBox" style="text-align:center;margin-top:10px"></div>`);
+  bindSnd(w);
+  const sp = makeSpeaker(w);
+  sp.setKind(step.kind);
+  document.getElementById("spTask").innerHTML = `🎯 ${isW ? "단어를" : "문장을"} 정확하게 말하면 다음으로!`;
+  const pass = () => {
+    document.getElementById("mic").disabled = true;
+    L.session.xp += 2; saveSess(L.session);
+    L.auto = setTimeout(() => { stopAll(); nextStep(); }, 1300);
+  };
+  document.getElementById("mic").onclick = async () => {
+    if (await sp.attempt()) pass();
+    else if (sp.fails >= 5) showSkip(pass);
+  };
 }
 
 // ── 3. 테스트 ──
