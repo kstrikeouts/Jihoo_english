@@ -230,7 +230,7 @@ function renderHome() {
     <h1>${esc(callName())}, 안녕! 👋</h1>
     <p class="muted">레벨 ${lv} · 다음 레벨까지 ⭐ ${lv * 200 - totalXP()}</p>
     ${main}
-    <h2>도장판 <small class="muted" style="font-size:15px">${passed}/${lastDay()} Day</small></h2>
+    <h2>도장판 <small class="muted" style="font-size:18px">${passed}/${lastDay()} Day</small></h2>
     <div class="card">${stampBoard(d)}<p class="stamp-note">5일 배우고, 6일째는 🌟 복습 Day</p></div>`;
   document.getElementById("startL")?.addEventListener("click", () => startToday());
   document.getElementById("reLearn")?.addEventListener("click", () => startToday({ relearn: true }));
@@ -319,6 +319,16 @@ function stepPhase(step) {
   document.getElementById("go").onclick = nextStep;
 }
 
+// 재생 버튼: 🔊 보통 속도 + 🐢 천천히 (kind: w=단어, x=예문)
+const SLOW = 0.7;
+function sndBtns(kind, label) {
+  return `<div class="snd"><button class="sbtn" data-snd="${kind}">🔊 ${label}</button>
+    <button class="sbtn slow" data-snd="${kind}" data-slow="1">🐢 천천히</button></div>`;
+}
+function bindSnd(w) {
+  document.querySelectorAll("[data-snd]").forEach((b) => (b.onclick = () => say(w, b.dataset.snd, b.dataset.slow ? SLOW : 1)));
+}
+
 // ── 1. 복습 ──
 function reviewPhase(due) {
   const steps = [{ type: "phase", emoji: "🔁", title: "복습 시간", sub: `전에 배운 단어 ${due.length}개를 다시 만나요` }];
@@ -383,16 +393,16 @@ function stepIntro(step, w) {
       <div class="emoji">${w.emoji}</div>
       <div class="word ${en.length > 10 ? "long" : ""}">${esc(en)}</div>
       <div class="meaning">${esc(w.meaning)}</div>
-      <div style="margin-top:14px"><button class="speaker" id="spk">🔊</button></div>
-      <div class="ex"><div class="en">${esc(w.example)}</div><div class="ko">${esc(w.example_ko)}</div></div>
+      ${sndBtns("w", "단어 듣기")}
+      <div class="ex"><div class="ex-label">예문</div><div class="en">${esc(w.example)}</div><div class="ko">${esc(w.example_ko)}</div>
+        ${sndBtns("x", "문장 듣기")}</div>
     </div>
     <div class="stars" id="stars" style="margin-top:10px"></div><div class="heard" id="heard"></div>
     <div class="row" style="margin-top:8px">
       <button class="btn ghost" id="mic">🎤 따라하기</button>
       <button class="btn" id="go">다음 ▶</button></div>`);
-  const play = () => say(w, "w").then(() => st.L?.steps[st.L.i] === step && say(w, "x"));
-  play();
-  document.getElementById("spk").onclick = play;
+  say(w, "w");
+  bindSnd(w);
   document.getElementById("go").onclick = () => { stopAll(); nextStep(); };
   document.getElementById("mic").onclick = () => speakAttempt(w, en);
 }
@@ -480,7 +490,7 @@ function testRoundEnd(d) {
     <p class="muted" style="margin:6px 0 16px">틀린 <b style="color:var(--primary-d)">${wrong.length}문제</b>만 다시 맞히면 통과예요</p>
     <div class="wlist" style="text-align:left">${ws.map((w) => `<button class="wrow" data-id="${w.id}"><span class="em">${w.emoji}</span>
       <span><div class="w">${esc(S.spoken(w))}</div><div class="m">${esc(w.meaning)}</div></span><span class="bx" style="background:var(--sky)">🔊</span></button>`).join("")}</div>
-    <p class="muted" style="font-size:14px;margin:10px 0 18px">단어를 눌러 한 번 더 들어 보세요</p>
+    <p class="muted" style="font-size:17px;margin:10px 0 18px">단어를 눌러 한 번 더 들어 보세요</p>
     <button class="btn" id="again">다시 도전!</button></div>`);
   document.querySelectorAll(".wrow").forEach((b) => (b.onclick = () => say(st.byId[b.dataset.id], "ek")));
   document.getElementById("again").onclick = () => {
@@ -516,7 +526,8 @@ function stepQuiz(step, w) {
   const listen = step.mode === "listen_pick";
   const head = listen
     ? `<p class="prompt">잘 듣고 알맞은 뜻을 골라요</p>
-       <div style="text-align:center;margin-bottom:22px"><button class="speaker big" id="spk">🔊</button></div>`
+       <div style="text-align:center;margin-bottom:18px"><button class="speaker big" id="spk">🔊</button>
+         <div><button class="sbtn slow" id="spkSlow" style="margin-top:12px">🐢 천천히 듣기</button></div></div>`
     : `<p class="prompt">영어로 뭐라고 할까요?</p>
        <div class="card wordcard" style="padding:18px;margin-bottom:18px"><div class="emoji" style="font-size:64px">${w.emoji}</div>
        <div class="meaning">${esc(w.meaning)}</div></div>`;
@@ -528,7 +539,11 @@ function stepQuiz(step, w) {
     ${isTest ? "" : `<div style="text-align:center;margin-top:18px"><button class="hint-btn" id="hint">💡 힌트</button></div>`}`);
 
   let hint = false, answered = false;
-  if (listen) { say(w, "w"); document.getElementById("spk").onclick = () => say(w, "w"); }
+  if (listen) {
+    say(w, "w");
+    document.getElementById("spk").onclick = () => say(w, "w");
+    document.getElementById("spkSlow").onclick = () => say(w, "w", SLOW);
+  }
   document.getElementById("hint")?.addEventListener("click", (e) => {
     hint = true; e.currentTarget.remove();
     S.shuffle([...document.querySelectorAll(".opt")].filter((b) => b.dataset.id !== w.id)).slice(0, 2).forEach((b) => b.classList.add("gone"));
@@ -557,14 +572,14 @@ function quizSpell(step, w) {
   lessonFrame(`<p class="phase">${phaseLabel(step)}</p><p class="prompt">알파벳을 순서대로 눌러요</p>
     <div class="card wordcard" style="padding:16px"><div class="emoji" style="font-size:56px">${w.emoji}</div>
       <div class="meaning">${esc(w.meaning)}</div>
-      <div style="margin-top:10px"><button class="speaker" id="spk">🔊</button></div></div>
+      ${sndBtns("w", "듣기")}</div>
     <div class="slots ${small}" id="slots"></div><div class="tiles ${small}" id="tiles"></div>
     <div class="spell-tools">
       <button class="hint-btn" id="undo">⌫ 지우기</button>
       ${isTest ? "" : `<button class="hint-btn" id="hint">💡 한 글자 보기</button>`}
     </div>`);
   say(w, "w");
-  document.getElementById("spk").onclick = () => say(w, "w");
+  bindSnd(w);
   const $s = document.getElementById("slots"), $t = document.getElementById("tiles");
   const draw = () => {
     let k = 0;
@@ -724,7 +739,7 @@ function answer(step, w, ok, hint, extra = {}) {
   fb.className = `feedback ${ok ? "ok" : "no"}`;
   fb.innerHTML = `<div class="inner">${combo}<div class="msg">${ok ? (hint ? "힌트로 맞혔어요! 💡" : pick(PRAISE)) : "아쉬워요! 정답은 이거예요"}${boxMsg}</div>
     <div class="ans"><span class="en">${esc(S.spoken(w))}</span> ${w.emoji} ${esc(w.meaning)}</div>
-    ${note ? `<div class="muted" style="margin:-6px 0 12px;font-size:15px">${note}</div>` : ""}
+    ${note ? `<div class="muted" style="margin:-6px 0 12px;font-size:18px">${note}</div>` : ""}
     <button class="btn ${ok ? "mint" : ""}" id="cont">계속</button></div>`;
   document.body.appendChild(fb);
   if (!extra.quiet) L.sayT = setTimeout(() => say(w, "w"), 250);
@@ -914,7 +929,7 @@ async function renderRewards() {
       <h2>졸업 스티커 🎓 ${grads.length}개</h2>
       <div class="card"><div class="sticker-wall">${Array.from({ length: slots }, (_, i) =>
         grads[i] ? `<span title="${esc(grads[i].word)}">${grads[i].emoji}</span>` : `<span class="empty">?</span>`).join("")}</div></div>
-      <p style="text-align:center;margin:28px 0 8px"><a href="parent.html" class="muted" style="font-size:14px">👨‍👩‍👦 부모님 화면</a></p>`;
+      <p style="text-align:center;margin:28px 0 8px"><a href="parent.html" class="muted" style="font-size:17px">👨‍👩‍👦 부모님 화면</a></p>`;
   };
   draw(DB.mode === "local" ? await DB.loadRewards() : LSget(DB.k("rewards"), []));
   if (DB.mode === "cloud") { const r = await DB.loadRewards(); if (st.tab === "rewards") draw(r); }

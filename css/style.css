@@ -303,3 +303,84 @@ p { margin: 0; }
 .stamp.rv { border-color: var(--lav); color: var(--lav); box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px var(--lav); }
 .stamps { align-items: start; }
 .stamps span { height: auto; align-self: start; }
+
+/* ── 재생 버튼 (단어 / 문장 · 천천히) ─────────────────── */
+.snd { display: flex; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.sbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 18px; border-radius: 999px;
+  font-family: var(--font); font-size: 19px; color: #fff; background: var(--sky); box-shadow: 0 4px 0 var(--sky-d); }
+.sbtn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--sky-d); }
+.sbtn.slow { background: #fff; color: var(--sky-d); border: 2px solid #BFE0FF; box-shadow: 0 4px 0 #BFE0FF; }
+.sbtn.slow:active { box-shadow: 0 1px 0 #BFE0FF; }
+.wordcard .ex .snd { justify-content: flex-start; margin-top: 12px; }
+.wordcard .ex .sbtn { min-height: 44px; font-size: 17px; padding: 0 16px; }
+.ex-label { font-size: 15px; color: var(--muted); margin-bottom: 4px; }
+
+/* ── 글씨 크게 (아이 눈높이) ─────────────────────────── */
+h1 { font-size: 30px; }
+h2 { font-size: 24px; }
+p.muted, .muted { line-height: 1.45; }
+.chip { font-size: 17px; padding: 7px 14px; }
+.sync { font-size: 14px; }
+.steps li { font-size: 20px; padding: 14px 16px; }
+.steps li .num { font-size: 17px; }
+.btn { font-size: 22px; min-height: 62px; }
+.btn.small { font-size: 19px; min-height: 52px; }
+.tabs button { font-size: 15px; }
+.tabs button .i { font-size: 26px; }
+.phase { font-size: 18px; }
+.prompt { font-size: 26px; }
+.phase-chip { font-size: 15px; }
+.wordcard .emoji { font-size: 100px; }
+.wordcard .word { font-size: 48px; }
+.wordcard .word.long { font-size: 36px; }
+.wordcard .meaning { font-size: 28px; }
+.wordcard .ex { padding: 14px 16px; }
+.wordcard .ex .en { font-size: 23px; line-height: 1.35; }
+.wordcard .ex .ko { font-size: 18px; margin-top: 4px; }
+.opt { font-size: 21px; min-height: 104px; }
+.opt .em { font-size: 44px; }
+.opt.en { font-size: 25px; min-height: 76px; }
+.hint-btn { font-size: 18px; padding: 10px 16px; }
+.heard { font-size: 18px; }
+.feedback .msg { font-size: 26px; }
+.feedback .ans { font-size: 21px; }
+.slot { width: 46px; height: 58px; font-size: 32px; }
+.tile { width: 54px; height: 60px; font-size: 32px; }
+.slots.sm .slot { width: 32px; height: 50px; font-size: 26px; }
+.tiles.sm .tile { width: 48px; height: 56px; font-size: 28px; }
+.stat3 b { font-size: 30px; }
+.stat3 span { font-size: 15px; }
+.day-badge { font-size: 18px; }
+.day-theme { font-size: 23px; }
+.td-title { font-size: 27px; }
+.test-rules { font-size: 20px; }
+.test-rules .muted { font-size: 16px; }
+.combo { font-size: 17px; }
+.celebrate h1 { font-size: 30px; }
+.celebrate p { font-size: 18px; }
+.note { font-size: 16px; }
+.pl .t { font-size: 19px; }
+.pl .n { font-size: 16px; }
+.seg button { font-size: 17px; }
+.field > label { font-size: 17px; }
+.now .word { font-size: 38px; }
+.now .meaning { font-size: 23px; }
+.now .pos { font-size: 16px; }
+.wrow .w { font-size: 22px; }
+.wrow .m { font-size: 16px; }
+.wrow .bx { font-size: 13px; }
+.boxes button { font-size: 13px; }
+.goal .top { font-size: 19px; }
+.stamps span { font-size: 16px; }
+.stamp-note { font-size: 15px; }
+.party-name { font-size: 24px; }
+.party-head { font-size: 34px; }
+.party-sub { font-size: 19px; }
+.party-facts div { font-size: 17px; }
+.party-board-t { font-size: 17px; }
+.input { font-size: 18px; }
+/* 재생 버튼 두 개를 한 줄에 */
+.snd { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; max-width: 340px; margin: 14px auto 0; }
+.sbtn { justify-content: center; padding: 0 8px; font-size: 18px; white-space: nowrap; }
+.wordcard .ex .snd { margin: 12px 0 0; max-width: none; }
+.steps li { font-size: 19px; }
