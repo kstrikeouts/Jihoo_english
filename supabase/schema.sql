@@ -68,7 +68,7 @@ create table if not exists answer_logs (
   learner_id  uuid not null references learners(id) on delete cascade,
   word_id     text not null,
   mode        text not null check (mode in
-               ('listen_pick','meaning_pick','spell','speak','chunk_speak')),
+               ('listen_pick','meaning_pick','spell','speak','chunk_speak','order')),  -- order = 문장 만들기
   phase       text not null default 'practice'
               check (phase in ('practice','test','review')),   -- 반복 연습 / Day 테스트 / 복습
   is_correct  boolean not null,

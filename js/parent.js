@@ -7,8 +7,8 @@ const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { ret
 
 const $app = document.getElementById("app");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const MODE = { listen_pick: "듣고 고르기", meaning_pick: "뜻 보고 고르기", spell: "철자", speak: "뜻 보고 말하기", chunk_speak: "문장 말하기" };
-const QUIZ = new Set(["listen_pick", "meaning_pick", "spell", "speak"]);
+const MODE = { listen_pick: "듣고 고르기", meaning_pick: "뜻 보고 고르기", spell: "철자", speak: "뜻 보고 말하기", chunk_speak: "문장 말하기", order: "문장 만들기" };
+const QUIZ = new Set(["listen_pick", "meaning_pick", "spell", "speak", "order"]);
 const KIND = { lesson: "학습", review: "복습", audio: "🎧 듣기", speaking: "말하기", boss: "보스전" };
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 let D = null;

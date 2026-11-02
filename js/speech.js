@@ -3,24 +3,34 @@
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const canRecognize = !!SR;
 
-export function listenOnce({ lang = "en-US", timeoutMs = 7000 } = {}) {
+// onInterim(text): 말하는 도중 중간 인식 결과 (노래방 자막처럼 글자 색칠에 사용)
+export function listenOnce({ lang = "en-US", timeoutMs = 7000, onInterim = null } = {}) {
   return new Promise((resolve, reject) => {
     if (!SR) return reject(new Error("unsupported"));
     const rec = new SR();
     rec.lang = lang;
-    rec.interimResults = false;
+    rec.interimResults = !!onInterim;
     rec.continuous = false;
     rec.maxAlternatives = 5;
-    let done = false;
+    let done = false, lastInterim = "";
     const finish = (fn, v) => { if (done) return; done = true; clearTimeout(t); try { rec.stop(); } catch {} fn(v); };
-    const t = setTimeout(() => finish(reject, new Error("no-speech")), timeoutMs);
+    const t = setTimeout(() => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech"))), timeoutMs);
     rec.onresult = (e) => {
+      const last = e.results[e.results.length - 1];
+      if (onInterim && !last.isFinal) {
+        let text = "";
+        for (const r of e.results) text += r[0].transcript;
+        lastInterim = text;
+        try { onInterim(text); } catch {}
+        return;
+      }
       const alts = [];
       for (const r of e.results) for (let i = 0; i < r.length; i++) alts.push(r[i].transcript);
       finish(resolve, alts);
     };
     rec.onerror = (e) => finish(reject, new Error(e.error || "error"));
-    rec.onend = () => finish(reject, new Error("no-speech"));
+    // 중간 결과만 오고 끝난 경우(일부 기기)도 그 결과로 판정
+    rec.onend = () => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech")));
     try { rec.start(); } catch (e) { finish(reject, e); }
   });
 }
@@ -81,4 +91,22 @@ export function scoreSentence(target, alternatives, keyWords) {
   }
   best.score = best.pass ? 3 : best.sim >= 0.6 ? 2 : best.sim >= 0.35 ? 1 : 0;
   return best;
+}
+
+// 노래방 자막: 목표 문장의 단어 중 지금까지 순서대로 들린 단어 개수와 각 단어의 맞음 여부
+export function karaokeMatch(target, heard) {
+  const tw = target.split(/\s+/).filter(Boolean).map((x) => normalize(x));
+  const hw = normalize(heard).split(" ").filter(Boolean);
+  const hit = tw.map(() => false);
+  let j = 0, last = -1;
+  tw.forEach((t, i) => {
+    if (!t) { hit[i] = true; return; }
+    const parts = t.split(" ");
+    for (let k = j; k < hw.length; k++) {
+      if (parts.every((p, n) => hw[k + n] === p || (hw[k + n] && lev(hw[k + n], p) <= (p.length > 4 ? 1 : 0)))) {
+        hit[i] = true; j = k + parts.length; last = i; break;
+      }
+    }
+  });
+  return { hit, reached: last + 1 };
 }

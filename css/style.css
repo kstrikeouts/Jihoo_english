@@ -423,3 +423,29 @@ p.muted, .muted { line-height: 1.45; }
 .tiles.xs .tile { width: 40px; height: 48px; font-size: 22px; }
 .slot-ap { font-family: var(--en); font-size: 28px; font-weight: 600; align-self: center; }
 .btn:disabled.ready { animation: none; }
+
+/* ── 노래방 자막 ─────────────────────────────── */
+.kara .kw { display: inline-block; padding: 0 1px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--primary) 50%, rgba(35, 33, 74, .45) 50%) right / 200% 100% no-repeat;
+  -webkit-background-clip: text; background-clip: text; color: var(--ink); transition: background-position .45s ease; }
+.kara .kw.key { color: var(--primary-d); }
+.kara.listening .kw { color: rgba(35, 33, 74, .55); }
+.kara.listening .kw.key { color: rgba(219, 90, 30, .6); }
+.kara .kw.sung { color: transparent; background-position: left; }
+.kara .kw.good { color: var(--mint-d); }
+.kara .kw.miss { color: var(--red-d); text-decoration: underline wavy var(--red); text-underline-offset: 6px; }
+.pattern .kara { line-height: 1.5; }
+
+/* ── 문장 만들기 ─────────────────────────────── */
+.order-line { min-height: 70px; margin: 16px 0 12px; padding: 10px; border-radius: 16px; border: 2px dashed #E3D6C2; background: #fff;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.order-line.good { border: 2px solid var(--mint); background: #E6F8F1; }
+.order-line.bad { border: 2px solid var(--red); background: #FFECEC; animation: shake .35s; }
+.ohint { color: var(--muted); font-size: 16px; margin: auto; }
+.oend { font-family: var(--en); font-size: 24px; font-weight: 600; margin-left: -4px; }
+.order-pool { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.otok { font-family: var(--en); font-size: 23px; font-weight: 500; padding: 10px 16px; border-radius: 14px; background: var(--card);
+  border: 2px solid var(--line); box-shadow: 0 4px 0 var(--line); min-height: 52px; }
+.otok:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--line); }
+.otok.on { background: #EEF7FF; border-color: #BFE0FF; box-shadow: 0 3px 0 #BFE0FF; padding: 8px 14px; min-height: 46px; }
+.otok.used { visibility: hidden; }
