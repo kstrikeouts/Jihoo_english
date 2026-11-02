@@ -3,7 +3,7 @@
 // - 지후가 말하는 동안 마이크 소리를 실시간 분석해 주황색 선·막대로 겹쳐 그림
 // - 목소리 높이가 달라도 "오르내림 모양"을 비교하도록 각자 평균 높이 기준(반음 단위)으로 맞춤
 
-import { audioCtx } from "./audio.js";
+import { audioCtx, withTimeout } from "./audio.js";
 const ctx = audioCtx;
 
 // ── 음높이 찾기 (정규화 자기상관, 70~500Hz) ──
@@ -71,7 +71,7 @@ export class LiveCapture {
   constructor(onFrame) { this.onFrame = onFrame; this.data = { t: [], f0: [], rms: [] }; }
   async start() {
     const c = ctx();
-    if (c.state === "suspended") await c.resume();
+    if (c.state !== "running") await withTimeout(c.resume().catch(() => {}), 800);
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });

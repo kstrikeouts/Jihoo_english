@@ -4,7 +4,8 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const canRecognize = !!SR;
 
 // onInterim(text): 말하는 도중 중간 인식 결과 (노래방 자막처럼 글자 색칠에 사용)
-export function listenOnce({ lang = "en-US", timeoutMs = 7000, onInterim = null } = {}) {
+// ctrl.stop(): 말하기를 끝냈다고 알림 (지금까지 들린 말로 판정)
+export function listenOnce({ lang = "en-US", timeoutMs = 7000, onInterim = null, ctrl = null } = {}) {
   return new Promise((resolve, reject) => {
     if (!SR) return reject(new Error("unsupported"));
     const rec = new SR();
@@ -13,7 +14,8 @@ export function listenOnce({ lang = "en-US", timeoutMs = 7000, onInterim = null 
     rec.continuous = false;
     rec.maxAlternatives = 5;
     let done = false, lastInterim = "";
-    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(t); try { rec.stop(); } catch {} fn(v); };
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(t); try { rec.abort(); } catch { try { rec.stop(); } catch {} } fn(v); };
+    if (ctrl) ctrl.stop = () => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech")));
     const t = setTimeout(() => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech"))), timeoutMs);
     rec.onresult = (e) => {
       const last = e.results[e.results.length - 1];

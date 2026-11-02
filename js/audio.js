@@ -85,11 +85,30 @@ export function audioCtx() {
   }
   return wctx;
 }
+// 기다리다 멈추지 않도록 시간 제한 (아이폰은 마이크를 쓴 뒤 오디오가 '일시정지(interrupted)' 상태로 멈추는 일이 있음)
+export const withTimeout = (p, ms, v) => Promise.race([p, new Promise((r) => setTimeout(() => r(v), ms))]);
+function rebuildCtx() {
+  try { keep?.stop(); } catch {}
+  try { wctx?.close(); } catch {}
+  wctx = null; keep = null;
+  return audioCtx();
+}
 async function ready() {
-  const c = audioCtx();
-  if (c.state !== "running") { try { await c.resume(); } catch {} await wait(150); } // 막 깨어났으면 잠깐 기다림
+  let c = audioCtx();
+  if (c.state !== "running") {
+    await withTimeout(c.resume().catch(() => {}), 800);
+    if (c.state !== "running") { c = rebuildCtx(); await withTimeout(c.resume().catch(() => {}), 800); }
+    if (c.state !== "running") throw new Error("audio not running");
+    await wait(120); // 막 깨어났으면 잠깐 기다림
+  }
   return c;
 }
+// 녹음할 때·끝났을 때 오디오 세션 전환 (아이폰: 재생 전용 세션에서는 마이크가 멈출 수 있음)
+export function setRecording(on) {
+  try { if (navigator.audioSession) navigator.audioSession.type = on ? "play-and-record" : "playback"; } catch {}
+}
+// 재생 시작·끝 알림 → 화면에 '듣는 중' 표시
+const emit = (on, kind) => { try { dispatchEvent(new CustomEvent("je-play", { detail: { on, kind } })); } catch {} };
 // 첫 터치 때 오디오를 미리 깨워 둠 (아이폰은 터치가 있어야 소리가 켜짐)
 ["pointerdown", "touchend", "keydown"].forEach((ev) => addEventListener(ev, () => { try { audioCtx().resume(); } catch {} }, { passive: true }));
 
@@ -107,14 +126,21 @@ export function preloadSay(w) { if (hasMp3(w.id)) ["w", "x"].forEach((v) => load
 
 function playElement(url, rate) {
   return new Promise((resolve) => {
-    el.onended = el.onerror = () => resolve();
+    const safety = setTimeout(resolve, 15000);
+    el.onended = el.onerror = () => { clearTimeout(safety); resolve(); };
     el.src = url; el.playbackRate = rate;
-    el.play().catch(() => resolve());
+    el.play().catch(() => { clearTimeout(safety); resolve(); });
   });
 }
 
 export async function say(w, v = "w", rate = 1) {
   stopAll();
+  const g0 = ttsGen;
+  emit(true, v);
+  try { return await sayInner(w, v, rate); }
+  finally { if (g0 === ttsGen) emit(false, v); }
+}
+async function sayInner(w, v, rate) {
   window.__lastSay = `${w.id}_${v}`; // (테스트·디버그용) 마지막으로 재생한 소리
   const g = ttsGen;
   if (!hasMp3(w.id)) return ttsVariant(w, v, rate);
@@ -129,7 +155,9 @@ export async function say(w, v = "w", rate = 1) {
     return await new Promise((resolve) => {
       const src = c.createBufferSource();
       src.buffer = buf; src.connect(c.destination);
-      src.onended = () => { if (curSrc === src) curSrc = null; resolve(); };
+      // 안전장치: 끝 알림이 안 와도 길이만큼 지나면 끝난 것으로
+      const safety = setTimeout(() => { if (curSrc === src) curSrc = null; resolve(); }, (buf.duration / 1) * 1000 + 1500);
+      src.onended = () => { clearTimeout(safety); if (curSrc === src) curSrc = null; resolve(); };
       curSrc = src;
       src.start(c.currentTime + 0.05);
     });
@@ -141,6 +169,7 @@ export async function say(w, v = "w", rate = 1) {
 export function sayText(text, lang = "en") { stopAll(); return ttsOne(text, lang); }
 export function stopAll() {
   ttsGen++;
+  emit(false, null);
   try { curSrc?.stop(); } catch {}
   curSrc = null;
   el.onended = el.onerror = null;

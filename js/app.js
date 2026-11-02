@@ -3,7 +3,7 @@
 import { CONFIG } from "./config.js";
 import { DB } from "./db.js";
 import * as S from "./srs.js";
-import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3, preloadSay } from "./audio.js";
+import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3, preloadSay, setRecording, withTimeout } from "./audio.js";
 import * as P from "./pitch.js";
 import { canRecognize, listenOnce, scoreSpeech, scoreSentence, normalize, karaokeMatch } from "./speech.js";
 import { ask } from "./ui.js";
@@ -294,6 +294,7 @@ function runSteps(label, steps, onDone) {
   renderStep();
 }
 function nextStep() {
+  stopSpeaking();
   document.querySelector(".feedback")?.remove();
   clearTimeout(st.L?.auto); clearTimeout(st.L?.sayT);
   const L = st.L;
@@ -391,6 +392,84 @@ function learnPhase(d, relearn) {
   });
 }
 
+// ═════════════ 지금 상태 표시: 🔊 듣는 중 / 🎤 말하는 중 ═════════════
+const pill = (() => {
+  const el = document.createElement("div");
+  el.id = "modePill"; el.className = "mode-pill"; el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite");
+  el.innerHTML = `<span class="mp-ico"></span><span class="mp-txt"></span><span class="mp-bars"><i></i><i></i><i></i><i></i><i></i></span>`;
+  document.body.appendChild(el);
+  return el;
+})();
+let modeNow = null;
+function setMode(mode, text) {
+  modeNow = mode;
+  document.body.classList.toggle("is-listening", mode === "listen");
+  document.body.classList.toggle("is-speaking", mode === "speak");
+  pill.className = "mode-pill" + (mode ? " show " + mode : "");
+  if (mode) {
+    pill.querySelector(".mp-ico").textContent = mode === "listen" ? "🔊" : "🎤";
+    pill.querySelector(".mp-txt").textContent = text || (mode === "listen" ? "듣는 중… 잘 들어 봐요" : "지금 말해요!");
+  }
+  if (mode !== "speak") setLevel(0);
+}
+function setLevel(v) { pill.style.setProperty("--lvl", Math.max(0, Math.min(1, v)).toFixed(2)); }
+// 소리 재생 시작·끝 → 듣는 중 표시, 재생 중인 버튼과 글자 강조
+addEventListener("je-play", (e) => {
+  const { on, kind } = e.detail;
+  document.querySelectorAll(".sbtn.playing, .speaker.playing").forEach((b) => b.classList.remove("playing"));
+  document.querySelectorAll(".reading").forEach((x) => x.classList.remove("reading"));
+  if (on) {
+    if (modeNow === "speak") return;
+    setMode("listen", kind === "x" || kind === "xs" ? "문장 듣는 중… 잘 들어 봐요" : "단어 듣는 중… 잘 들어 봐요");
+    const k = (kind || "").charAt(0);
+    document.querySelectorAll(`[data-snd="${k}"]`).forEach((b) => b.classList.add("playing"));
+    document.querySelectorAll("#spk, #spkSlow").forEach((b) => b.classList.add("playing"));
+    const tgt = k === "x" ? document.querySelector(".wordcard .ex, .wordcard .pattern") : document.querySelector(".wordcard .word");
+    tgt?.classList.add("reading");
+  } else if (modeNow === "listen") setMode(null);
+});
+
+// 말하기 1번: 받아쓰기(+그래프용 마이크) — 어떤 경우에도 멈추지 않게 시간 제한·정리
+async function captureSpeech({ timeoutMs, onInterim, onLive }) {
+  const ctrl = {};
+  st.speakCtrl = ctrl;
+  stopAll(); clearTimeout(st.L?.sayT);
+  setRecording(true);
+  setMode("speak", "말하는 중… 지금 말해요!");
+  let cap = null;
+  if (!st.graphOff && navigator.mediaDevices?.getUserMedia) {
+    cap = new P.LiveCapture((d) => { setLevel((d.rms[d.rms.length - 1] || 0) * 8); onLive?.(d); });
+    const ok = await withTimeout(cap.start().then(() => true, () => false), 1500, false);
+    if (!ok) { try { cap.stop(); } catch {} cap = null; st.graphOff = true; } // 마이크가 늦게 열리면 그래프는 끔
+  }
+  let watchdog;
+  try {
+    const listen = () => listenOnce({ timeoutMs, onInterim, ctrl });
+    const guard = new Promise((_, no) => { watchdog = setTimeout(() => no(new Error("watchdog")), timeoutMs + 3000); });
+    let alts;
+    try { alts = await Promise.race([listen(), guard]); }
+    catch (e) {
+      // 그래프용 마이크와 받아쓰기가 부딪히면 그래프를 끄고 받아쓰기만 한 번 더
+      if (cap && /audio-capture|aborted|watchdog/.test(e.message)) {
+        try { cap.stop(); } catch {} cap = null; st.graphOff = true;
+        clearTimeout(watchdog);
+        const guard2 = new Promise((_, no) => { watchdog = setTimeout(() => no(new Error("watchdog")), timeoutMs + 3000); });
+        alts = await Promise.race([listen(), guard2]);
+      } else throw e;
+    }
+    return { alts, live: cap ? cap.stop() : null };
+  } finally {
+    clearTimeout(watchdog);
+    try { ctrl.stop?.(); } catch {}
+    try { cap?.stop(); } catch {}
+    st.speakCtrl = null;
+    setRecording(false);
+    setMode(null);
+  }
+}
+// 말하는 중에 마이크 버튼을 다시 누르면 '다 말했어요'
+function stopSpeaking() { try { st.speakCtrl?.stop?.(); } catch {} }
+
 // ═════════════ 따라 말하기: 정확도 판정 + 억양·강세 그래프 ═════════════
 const selfMode = () => !canRecognize || st.srBroken; // 마이크(받아쓰기)가 안 되면 스스로 체크
 
@@ -442,42 +521,38 @@ function makeSpeaker(w) {
   sp.attempt = async () => {
     const heard = document.getElementById("heard"), score = document.getElementById("pgScore"), mic = document.getElementById("mic");
     if (selfMode()) { heard.textContent = "잘했어요! 👏"; fx("ok"); return true; }
-    stopAll(); clearTimeout(st.L?.sayT);
+    if (sp.busy) { stopSpeaking(); return null; }   // 말하는 중에 다시 누르면 '다 말했어요'
+    sp.busy = true;
     const target = sp.kind === "w" ? S.spoken(w) : w.example;
     const liveMax = Math.max(sp.kind === "w" ? 2.5 : 4, (sp.refShape?.dur || 1) * 1.8);
-    let cap = null;
-    if (!st.graphOff && navigator.mediaDevices?.getUserMedia) {
-      cap = new P.LiveCapture((d) => { const c = canvas(); if (c) P.draw(c, { ref: sp.refShape, live: true, liveData: d, liveMax }); });
-      try { await cap.start(); } catch { cap = null; }
-    }
-    mic.classList.add("on"); heard.textContent = "듣고 있어요… 말해 보세요!";
+    const label = mic.textContent;
+    mic.classList.add("on"); mic.textContent = "■ 다 말했어요";
+    heard.textContent = "듣고 있어요… 말해 보세요!";
+    document.querySelector(".wordcard")?.classList.add("speaking");
     karaReset();
-    const onInterim = (t) => karaUpdate(t);
-    let alts;
+    let res;
     try {
-      try { alts = await listenOnce({ timeoutMs: sp.kind === "w" ? 6000 : 9000, onInterim }); }
-      catch (e) {
-        // 그래프용 마이크와 받아쓰기가 충돌하면 그래프를 끄고 한 번 더
-        if (cap && /audio-capture|aborted/.test(e.message)) {
-          cap.stop(); cap = null; st.graphOff = true;
-          heard.textContent = "다시 한 번 말해 보세요!";
-          alts = await listenOnce({ timeoutMs: sp.kind === "w" ? 6000 : 9000, onInterim });
-        } else throw e;
-      }
+      res = await captureSpeech({
+        timeoutMs: sp.kind === "w" ? 6000 : 9000,
+        onInterim: (t) => karaUpdate(t),
+        onLive: (d) => { const c = canvas(); if (c) P.draw(c, { ref: sp.refShape, live: true, liveData: d, liveMax }); },
+      });
     } catch (e) {
-      cap?.stop();
       document.getElementById("kara")?.classList.remove("listening"); karaUpdate("");
       if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
         st.srBroken = true; heard.textContent = "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말한 다음 버튼을 눌러요";
-        const m = document.getElementById("mic"); if (m) m.textContent = "🗣️ 말했어요";
-      } else heard.textContent = "잘 안 들렸어요. 한 번 더 눌러 볼까요?";
-      mic.classList.remove("on");
+      } else heard.textContent = "잘 안 들렸어요. 🎤 버튼을 누르고 다시 말해 볼까요?";
       return false;
+    } finally {
+      sp.busy = false;
+      const m = document.getElementById("mic");
+      if (m) { m.classList.remove("on"); m.textContent = st.srBroken ? "🗣️ 말했어요" : label; }
+      document.querySelector(".wordcard")?.classList.remove("speaking");
     }
-    mic.classList.remove("on");
+    const alts = res.alts;
     document.getElementById("kara")?.classList.remove("listening");
     // 그래프 결과
-    const kidShape = cap ? P.shape(cap.stop()) : null;
+    const kidShape = res.live ? P.shape(res.live) : null;
     const c = canvas();
     if (c && (kidShape || sp.refShape)) P.draw(c, { ref: sp.refShape, kid: kidShape });
     const cmp = P.compare(sp.refShape, kidShape);
@@ -580,7 +655,9 @@ function stepEcho(step, w) {
     L.auto = setTimeout(() => { stopAll(); nextStep(); }, 1300);
   };
   document.getElementById("mic").onclick = async () => {
-    if (await sp.attempt()) pass();
+    const r = await sp.attempt();
+    if (r === null) return;            // '다 말했어요'로 멈춘 경우 — 판정은 진행 중인 쪽에서
+    if (r) pass();
     else if (sp.fails >= 5) showSkip(pass);
   };
 }
@@ -886,14 +963,18 @@ function quizSentence(step, w) {
       answer(step, w, false, false, { quiet: true });
     };
   };
+  let busy = false;
   document.getElementById("mic").onclick = async () => {
     if (answered) return;
-    stopAll();
+    if (busy) { stopSpeaking(); return; }   // 말하는 중에 다시 누르면 '다 말했어요'
+    busy = true;
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
-    mic.classList.add("on"); heard.textContent = "듣고 있어요… 읽어 보세요!";
+    mic.classList.add("on"); heard.textContent = "듣고 있어요… 읽어 보세요! 다 읽으면 🎤를 한 번 더 눌러요";
+    document.querySelector(".wordcard")?.classList.add("speaking");
     karaReset();
     try {
-      const r = scoreSentence(target, await listenOnce({ timeoutMs: 9000, onInterim: (t) => karaUpdate(t) }), keys);
+      const { alts } = await captureSpeech({ timeoutMs: 9000, onInterim: (t) => karaUpdate(t) });
+      const r = scoreSentence(target, alts, keys);
       document.getElementById("kara")?.classList.remove("listening");
       karaUpdate(r.transcript, true);
       tries++;
@@ -916,7 +997,12 @@ function quizSentence(step, w) {
         heard.textContent = "잘 안 들렸어요. 버튼을 누르고 다시 읽어 보세요";
         tries++; if (tries >= 3) giveUp();
       }
-    } finally { document.getElementById("mic")?.classList.remove("on"); }
+    } finally {
+      busy = false;
+      document.getElementById("mic")?.classList.remove("on");
+      document.querySelector(".wordcard")?.classList.remove("speaking");
+      document.getElementById("kara")?.classList.remove("listening");
+    }
   };
 }
 
@@ -953,12 +1039,15 @@ function quizSpeak(step, w) {
     document.getElementById("ans").classList.remove("hidden");
     answer(step, w, false, false);
   };
+  let busy = false;
   document.getElementById("mic").onclick = async () => {
     if (answered) return;
+    if (busy) { stopSpeaking(); return; }
+    busy = true;
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
     mic.classList.add("on"); heard.textContent = "듣고 있어요…";
     try {
-      const r = scoreSpeech(en, await listenOnce());
+      const r = scoreSpeech(en, (await captureSpeech({ timeoutMs: 6000 })).alts);
       tries++;
       stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
       heard.textContent = `"${r.transcript}" 라고 들렸어요`;
@@ -970,7 +1059,7 @@ function quizSpeak(step, w) {
     } catch (e) {
       if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) { st.srBroken = true; quizSpeak(step, w); return; }
       heard.textContent = "잘 안 들렸어요. 다시 눌러 주세요";
-    } finally { document.getElementById("mic")?.classList.remove("on"); }
+    } finally { busy = false; document.getElementById("mic")?.classList.remove("on"); }
   };
 }
 
@@ -1054,6 +1143,7 @@ function finishReviewOnly() {
 }
 
 function endLesson(navigate = true) {
+  stopSpeaking(); setMode(null);
   stopAll();
   document.querySelector(".feedback")?.remove();
   document.querySelector(".party")?.remove();
