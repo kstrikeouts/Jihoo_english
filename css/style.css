@@ -416,3 +416,10 @@ p.muted, .muted { line-height: 1.45; }
 .pg-score b { color: var(--primary-d); font-weight: 400; }
 .speak-panel .heard { margin-top: 8px; min-height: 24px; }
 .btn:disabled.sky { background: #D8D3CB; box-shadow: 0 5px 0 #C2BBB0; }
+/* 긴 단어 스펠링 (11~14글자) */
+.slots.xs { gap: 3px; }
+.slots.xs .slot { width: 24px; height: 42px; font-size: 20px; border-radius: 8px; }
+.tiles.xs { gap: 6px; }
+.tiles.xs .tile { width: 40px; height: 48px; font-size: 22px; }
+.slot-ap { font-family: var(--en); font-size: 28px; font-weight: 600; align-self: center; }
+.btn:disabled.ready { animation: none; }

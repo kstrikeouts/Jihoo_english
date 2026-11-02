@@ -223,7 +223,7 @@ function renderHome() {
       <div class="chips7">${chips}</div>
       <ul class="steps">
         ${rv || (!warm.words.length && !rec.warmup_at) ? "" : `<li class="${warmDone ? "done" : ""}"><span class="ic">☀️</span>${warm.prevDay ? `어제 배운 Day ${warm.prevDay} 복습` : "지난 단어 복습"}<span class="num">${warmDone ? "" : warm.words.length + "개"}</span></li>`}
-        <li class="${learned ? "done" : ""}"><span class="ic">${rv ? "🔁" : "✨"}</span>${rv ? `단어 ${ws.length}개 반복 학습` : `오늘 단어 ${ws.length}개 반복 학습`}<span class="num"></span></li>
+        <li class="${learned ? "done" : ""}"><span class="ic">${rv ? "🔁" : "✨"}</span>${rv ? `단어 ${ws.length}개 반복 학습` : `오늘 단어 ${ws.length}개: 듣기 → 발음 3번 → 스펠링 2번`}<span class="num"></span></li>
         <li><span class="ic">📝</span>${rv ? "복습 테스트 모두 맞히기" : "테스트 모두 맞히기"}<span class="num">${rec.test_rounds ? `도전 ${rec.test_rounds}번` : ""}</span></li>
       </ul>
       <button class="btn" id="startL">${learned ? "테스트 도전 ▶" : rec.started_at ? "이어서 하기 ▶" : "오늘 학습 시작 ▶"}</button>
@@ -246,8 +246,8 @@ function renderHome() {
 
 // ═════════════════════════ 학습 엔진 ═════════════════════════
 // 철자 문제로 낼 수 있는지: 알파벳·띄어쓰기만, 글자 10개 이하
-const letterCount = (w) => w.word.replace(/ /g, "").length;
-const spellable = (w) => /^[A-Za-z ]+$/.test(w.word) && letterCount(w) <= 10;
+const letterCount = (w) => w.word.replace(/[ ']/g, "").length;
+const spellable = (w) => /^[A-Za-z' ]+$/.test(w.word) && letterCount(w) <= 14;
 
 function reviewMode(p, w) {
   const opts = p.box <= 2 ? ["listen_pick", "meaning_pick"]
@@ -370,17 +370,21 @@ function reviewDayPractice(d) {
 function learnPhase(d, relearn) {
   const ws = dayWords(d);
   const steps = [];
-  if (!relearn) {
-    steps.push({ type: "phase", emoji: "✨", title: `Day ${d} · ${dayTheme(d)}`, sub: `오늘의 단어 ${ws.length}개를 만나요` });
-    ws.forEach((w) => steps.push({ type: "intro", id: w.id }));
-    steps.push({ type: "phase", emoji: "🎲", title: "한 번 더! 랜덤 발음", sub: "단어나 문장이 무작위로 나와요. 정확하게 말하면 통과!" });
-    S.shuffle(ws).forEach((w) => steps.push({ type: "echo", id: w.id, kind: Math.random() < 0.5 ? "w" : "x" }));
-  }
-  steps.push({ type: "phase", emoji: "🔁", title: "반복 연습", sub: "모두 맞힐 때까지 연습해요. 틀려도 괜찮아요!" });
-  for (const mode of ["listen_pick", "meaning_pick", "spell"]) {
-    S.shuffle(ws.filter((w) => mode !== "spell" || spellable(w))).forEach((w) => steps.push({ type: "practice", id: w.id, mode }));
-  }
-  runSteps("반복 학습", steps, () => {
+  // ① 듣고 외우기
+  steps.push({ type: "phase", emoji: "👂", title: `1단계 · 듣고 외우기`, sub: `Day ${d} ${dayTheme(d)} — 단어와 문장을 듣고 외워요` });
+  ws.forEach((w) => steps.push({ type: "intro", id: w.id }));
+  // ② 발음하기: 3라운드 × 7단어 (단어 → 문장 → 단어·문장 랜덤), 정확해야 통과
+  const ROUND = [["w", "단어를 말해요"], ["x", "문장을 말해요"], [null, "단어나 문장이 무작위로 나와요"]];
+  ROUND.forEach(([kind, sub], r) => {
+    steps.push({ type: "phase", emoji: "🎤", title: `2단계 · 발음하기 ${r + 1}/3`, sub: `${sub}. 정확하게 발음하면 다음으로!` });
+    S.shuffle(ws).forEach((w) => steps.push({ type: "echo", id: w.id, round: r + 1, kind: kind || (Math.random() < 0.5 ? "w" : "x") }));
+  });
+  // ③ 스펠링 2회: 1회차(힌트 가능) → 2회차(힌트 없음, 가짜 알파벳). 틀리면 맞힐 때까지 다시
+  [1, 2].forEach((r) => {
+    steps.push({ type: "phase", emoji: "🔤", title: `3단계 · 스펠링 ${r}/2`, sub: r === 1 ? "알파벳을 하나씩 눌러 단어를 완성해요" : "이번엔 힌트 없이! 가짜 알파벳도 섞여 있어요" });
+    S.shuffle(ws).forEach((w) => steps.push({ type: "practice", id: w.id, mode: spellable(w) ? "spell" : "meaning_pick", round: r, hard: r === 2 }));
+  });
+  runSteps("오늘 단어 학습", steps, () => {
     const rec = dayRec(d);
     if (rec.status === "learning") { rec.status = "testing"; rec.learned_at = S.nowISO(); saveDay(rec); }
     nextPhase();
@@ -468,7 +472,7 @@ function makeSpeaker(w) {
   return sp;
 }
 
-// ── 새 단어 카드: 단어 1번 + 문장 1번 정확하게 따라하면 다음 ──
+// ── 1단계 카드: 듣고 외우기 (단어는 자동 재생, 문장은 한 번 이상 들어야 다음) ──
 function stepIntro(step, w) {
   if (!st.progress[w.id]) {
     const p = S.newProgress(DB.learner.id, w.id);
@@ -477,13 +481,13 @@ function stepIntro(step, w) {
   }
   const L = st.L;
   preloadSay(w); const nx = st.byId[L.steps[L.i + 1]?.id]; if (nx) preloadSay(nx); // 소리 미리 준비
-  L.reps = L.reps || {};
-  const done = (L.reps[w.id] = L.reps[w.id] || { w: false, x: false });
+  L.heard = L.heard || {};
+  const heard = (L.heard[w.id] = L.heard[w.id] || { w: false, x: false });
   const en = S.spoken(w);
   const intros = L.steps.filter((s) => s.type === "intro");
   const n = intros.indexOf(step) + 1;
   const prevIsIntro = L.steps[L.i - 1]?.type === "intro";
-  lessonFrame(`<div class="intro-head"><p class="phase">새 단어 ${n}/${intros.length}${w.type === "idiom" ? " · 숙어" : ""}</p>
+  lessonFrame(`<div class="intro-head"><p class="phase">듣고 외우기 ${n}/${intros.length}${w.type === "idiom" ? " · 숙어" : ""}</p>
       ${prevIsIntro ? `<button class="prev-btn" id="prev">◀ 이전 단어</button>` : ""}</div>
     <div class="card wordcard">
       <div class="emoji">${w.emoji}</div>
@@ -493,39 +497,25 @@ function stepIntro(step, w) {
       <div class="ex"><div class="ex-label">예문</div><div class="en">${esc(w.example)}</div><div class="ko">${esc(w.example_ko)}</div>
         ${sndBtns("x", "문장 듣기")}</div>
     </div>
-    <div class="tasks"><span class="task" id="tW">① 단어 따라하기</span><span class="task" id="tX">② 문장 따라하기</span></div>
-    ${speakPanelHTML()}
-    <div class="row" style="margin-top:8px">
-      <button class="btn sky" id="mic">${selfMode() ? "🗣️ 말했어요" : "🎤 따라하기"}</button>
-      <button class="btn" id="go">다음 ▶</button></div>
-    <div id="skipBox" style="text-align:center;margin-top:10px"></div>`);
-  L.sayT = setTimeout(() => say(w, "w"), 500);
-  bindSnd(w);
-  const sp = makeSpeaker(w);
-  const cur = () => (!done.w ? "w" : !done.x ? "x" : null);
+    <div class="tasks"><span class="task" id="tW">🔊 단어 듣기</span><span class="task" id="tX">🔊 문장 듣기</span></div>
+    <p class="muted" style="text-align:center;margin:10px 0 0;font-size:17px">잘 듣고 소리 내어 외워 봐요. 다음 단계에서 직접 발음해요!</p>
+    <button class="btn" id="go" style="margin-top:12px">다음 ▶</button>`);
   const refresh = () => {
-    document.getElementById("tW").className = "task " + (done.w ? "ok" : cur() === "w" ? "now" : "");
-    document.getElementById("tX").className = "task " + (done.x ? "ok" : cur() === "x" ? "now" : "");
-    const k = cur();
-    document.getElementById("spTask").innerHTML = k === "w" ? `🎯 단어를 따라 말해요: <b>${esc(en)}</b>`
-      : k === "x" ? `🎯 이제 문장을 따라 말해요: <b>${esc(w.example)}</b>` : "🎉 완벽해요! 다음 단어로 가요";
-    const go = document.getElementById("go");
-    go.disabled = !!k; go.classList.toggle("ready", !k);
-    document.getElementById("mic").disabled = !k;
-    if (k && k !== sp.kind) sp.setKind(k);
+    document.getElementById("tW").className = "task " + (heard.w ? "ok" : "now");
+    document.getElementById("tX").className = "task " + (heard.x ? "ok" : heard.w ? "now" : "");
+    const ok = heard.w && heard.x, go = document.getElementById("go");
+    go.disabled = !ok; go.classList.toggle("ready", ok);
+    go.textContent = ok ? "다음 ▶" : !heard.w ? "단어를 들어 봐요" : "문장도 들어 봐요";
   };
-  sp.setKind(cur() || "w");
+  const mark = (k) => { heard[k] = true; refresh(); };
+  L.sayT = setTimeout(() => say(w, "w").then(() => { if (st.L?.steps[st.L.i] === step) mark("w"); }), 500);
+  document.querySelectorAll("[data-snd]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.snd;
+    say(w, k, b.dataset.slow ? SLOW : 1).then(() => { if (st.L?.steps[st.L.i] === step) mark(k); });
+  }));
   refresh();
   document.getElementById("prev")?.addEventListener("click", () => { stopAll(); clearTimeout(L.sayT); L.i--; renderStep(); });
-  document.getElementById("go").onclick = () => { if (cur()) return; stopAll(); nextStep(); };
-  document.getElementById("mic").onclick = async () => {
-    const k = cur(); if (!k) return;
-    if (await sp.attempt()) {
-      done[k] = true;
-      if (!cur()) { fx("win"); L.session.xp += 2; saveSess(L.session); }
-      setTimeout(refresh, 600);
-    } else if (sp.fails >= 5) showSkip(() => { done[k] = true; refresh(); });
-  };
+  document.getElementById("go").onclick = () => { if (!(heard.w && heard.x)) return; stopAll(); nextStep(); };
 }
 
 // 인식이 계속 안 될 때 막히지 않도록 (5번 실패 후)
@@ -536,15 +526,15 @@ function showSkip(fn) {
   document.getElementById("skipSay").onclick = () => { box.innerHTML = ""; fn(); };
 }
 
-// ── 한 번 더! 랜덤 발음 (첫 턴이 끝난 뒤 단어마다 한 번씩, 단어 또는 문장) ──
+// ── 2단계 발음하기: 단어당 3번 (1라운드 단어 · 2라운드 문장 · 3라운드 랜덤), 정확해야 다음 ──
 function stepEcho(step, w) {
   const L = st.L;
   preloadSay(w);
-  const echoes = L.steps.filter((s) => s.type === "echo");
+  const echoes = L.steps.filter((s) => s.type === "echo" && s.round === step.round);
   const n = echoes.indexOf(step) + 1;
   const isW = step.kind === "w";
   const shown = isW ? S.spoken(w) : w.example;
-  lessonFrame(`<p class="phase">한 번 더 · 랜덤 발음 ${n}/${echoes.length}</p>
+  lessonFrame(`<p class="phase">발음하기 ${step.round || 1}/3 라운드 · ${n}/${echoes.length}</p>
     <p class="prompt">${isW ? "이 단어를 말해 보세요" : "이 문장을 말해 보세요"}</p>
     <div class="card wordcard" style="padding:18px">
       <div class="emoji" style="font-size:60px">${w.emoji}</div>
@@ -664,6 +654,7 @@ function distractors(w, n = 3) {
 function phaseLabel(step) {
   if (step.type === "test") return `${step.part === 3 ? "3부 · 문장 말하기" : step.part === 2 ? "2부 · 스펠링" : "1부 · 4지선다"}${step.retryRound ? " · 재도전" : ""}`;
   if (step.type === "review" || step.type === "quiz") return `복습${step.retry ? " · 다시 도전" : ""}`;
+  if (step.round) return `스펠링 ${step.round}/2${step.mode !== "spell" ? " · 뜻 보고 고르기" : ""}${step.again ? " · 다시 도전" : ""}`;
   return `연습${step.again ? " · 한 번 더" : ""}`;
 }
 
@@ -709,16 +700,16 @@ function stepQuiz(step, w) {
 
 const DECOY = "abcdefghiklmnoprstuwy";
 function quizSpell(step, w) {
-  const isTest = step.type === "test";
-  const letters = w.word.split("");                       // 띄어쓰기 포함
-  const pos = letters.map((ch, i) => (ch === " " ? -1 : i)).filter((i) => i >= 0); // 글자 칸 위치
+  const isTest = step.type === "test" || step.hard;          // 2회차 스펠링도 시험처럼 (힌트 없음·가짜 알파벳)
+  const letters = w.word.split("");                       // 띄어쓰기·아포스트로피 포함
+  const pos = letters.map((ch, i) => (ch === " " || ch === "'" ? -1 : i)).filter((i) => i >= 0); // 글자 칸 위치
   const need = pos.map((i) => letters[i]);
   const decoys = isTest && need.length >= 3
     ? Array.from({ length: 2 }, () => DECOY[Math.floor(Math.random() * DECOY.length)]) : [];
   const tiles = S.shuffle([...need, ...decoys].map((ch) => ({ ch })));
   const slots = Array(need.length).fill(null);              // {tile, fixed}
   let hint = false, answered = false;
-  const small = need.length > 7 ? "sm" : "";
+  const small = need.length > 10 ? "sm xs" : need.length > 7 ? "sm" : "";
   lessonFrame(`<p class="phase">${phaseLabel(step)}</p><p class="prompt">알파벳을 순서대로 눌러요</p>
     <div class="card wordcard" style="padding:16px"><div class="emoji" style="font-size:56px">${w.emoji}</div>
       <div class="meaning">${esc(w.meaning)}</div>
@@ -735,6 +726,7 @@ function quizSpell(step, w) {
     let k = 0;
     $s.innerHTML = letters.map((ch) => {
       if (ch === " ") return `<span class="slot-gap"></span>`;
+      if (ch === "'") return `<span class="slot-ap">'</span>`;
       const i = k++, s = slots[i];
       return `<button class="slot ${s?.fixed ? "fixed" : ""} ${!s && slots.findIndex((x) => !x) === i ? "next" : ""}" data-i="${i}">${s ? tiles[s.tile].ch : ""}</button>`;
     }).join("");
