@@ -29,7 +29,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
 // ═════════════════════════ 시작 ═════════════════════════
 async function boot() {
   await DB.init();
-  if (DB.needsLogin()) return login();
+  if (DB.needsLogin()) return new URLSearchParams(location.search).get("invite") ? join() : login();
   await load();
 }
 
@@ -38,10 +38,48 @@ function login() {
     <div class="logo">👨‍👩‍👦</div><h1>부모님 로그인</h1>
     <input class="input" id="em" type="email" autocomplete="username" placeholder="이메일">
     <input class="input" id="pw" type="password" autocomplete="current-password" placeholder="비밀번호">
-    <div class="err" id="err"></div><button class="btn" id="go">로그인</button></div>`;
+    <div class="err" id="err"></div><button class="btn" id="go">로그인</button>
+    <button class="btn ghost small" id="toJoin">초대 코드로 가입하기</button></div>`;
   document.getElementById("go").onclick = async () => {
     try { await DB.signIn(document.getElementById("em").value.trim(), document.getElementById("pw").value); await load(); }
     catch (e) { document.getElementById("err").textContent = e.message; }
+  };
+  document.getElementById("toJoin").onclick = join;
+}
+
+// 가족 초대 코드로 가입 — 이미 가입한 가족이 부모 페이지 > 가족 에서 코드를 만들어 줌
+function join() {
+  const code = new URLSearchParams(location.search).get("invite") || "";
+  $app.innerHTML = `<div class="login stack" style="max-width:420px;margin:0 auto">
+    <div class="logo">💌</div><h1>가족 가입</h1>
+    <p class="muted" style="text-align:center">가족에게 받은 초대 코드가 있어야 가입할 수 있어요</p>
+    <input class="input" id="code" autocapitalize="characters" autocomplete="off" placeholder="초대 코드 8자리" value="${esc(code)}" style="text-align:center;letter-spacing:4px;font-size:22px">
+    <input class="input" id="em" type="email" autocomplete="username" placeholder="내 이메일">
+    <input class="input" id="pw" type="password" autocomplete="new-password" placeholder="비밀번호 (6자 이상)">
+    <input class="input" id="pw2" type="password" autocomplete="new-password" placeholder="비밀번호 확인">
+    <div class="err" id="err"></div><button class="btn" id="go">가입하기</button>
+    <button class="btn ghost small" id="toLogin">이미 계정이 있어요 (로그인)</button></div>`;
+  const err = document.getElementById("err");
+  document.getElementById("toLogin").onclick = login;
+  document.getElementById("go").onclick = async () => {
+    const v = (id) => document.getElementById(id).value;
+    err.textContent = "";
+    if (v("code").trim().length < 8) return (err.textContent = "초대 코드 8자리를 입력해 주세요.");
+    if (!/^\S+@\S+\.\S+$/.test(v("em").trim())) return (err.textContent = "이메일을 확인해 주세요.");
+    if (v("pw").length < 6) return (err.textContent = "비밀번호는 6자 이상으로 해 주세요.");
+    if (v("pw") !== v("pw2")) return (err.textContent = "비밀번호 확인이 달라요.");
+    const btn = document.getElementById("go"); btn.disabled = true; btn.textContent = "가입 중…";
+    try {
+      const r = await DB.signUp(v("em").trim(), v("pw"), v("code"));
+      if (r.needsConfirm) {
+        $app.innerHTML = `<div class="login stack" style="max-width:420px;margin:0 auto"><div class="logo">📧</div><h1>메일을 확인해 주세요</h1>
+          <p class="muted" style="text-align:center">${esc(v("em"))} 로 보낸 인증 메일의 링크를 누른 다음 로그인하면 돼요.</p>
+          <button class="btn" onclick="location.reload()">로그인 화면으로</button></div>`;
+        return;
+      }
+      notice("가입했어요! 지후 기록을 같이 볼 수 있어요");
+      await load();
+    } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = "가입하기"; }
   };
 }
 
@@ -144,6 +182,8 @@ function render() {
 
     <h2>보상 약속</h2>
     <div class="card">${rewardsBlock(streak, grad)}</div>
+
+    ${DB.mode === "cloud" ? `<h2>가족</h2><div class="card stack" id="family"><p class="muted">불러오는 중…</p></div>` : ""}
 
     <h2>설정</h2>
     <div class="card stack">${settingsBlock()}</div>`;
@@ -368,8 +408,54 @@ function settingsBlock() {
       : `<p class="note">체험 모드예요. js/config.js 에 Supabase 주소와 키를 넣으면 기록이 서버에 저장되고, 부모님 폰에서도 볼 수 있어요.</p>`}`;
 }
 
+// ═════════════════════════ 가족 (초대 코드) ═════════════════════════
+const kdt = (iso) => new Date(iso).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
+async function familyBlock() {
+  const box = document.getElementById("family");
+  if (!box) return;
+  const f = await DB.loadFamily().catch(() => null);
+  if (!document.body.contains(box)) return;
+  if (!f) { box.innerHTML = `<p class="muted">인터넷에 연결되면 보여요.</p>`; return; }
+  if (f.missing) {
+    box.innerHTML = `<p class="note">가족 초대 기능을 쓰려면 Supabase SQL Editor 에서 <b>supabase/family.sql</b> 을 한 번 실행해 주세요.</p>`;
+    return;
+  }
+  const now = Date.now();
+  const open = f.invites.filter((i) => !i.used_at && new Date(i.expires_at) > now);
+  const used = f.invites.filter((i) => i.used_at);
+  box.innerHTML = `<p style="font-size:15px;margin:0">초대 코드를 받은 가족은 <b>부모 페이지 → 초대 코드로 가입하기</b>에서 자기 이메일로 가입하고, 지후 기록을 같이 봐요. 코드는 <b>한 번만</b> 쓸 수 있고 <b>3일</b> 뒤 만료돼요.</p>
+    <div class="field"><label>함께 보는 가족</label>
+      <p style="margin:4px 0;font-size:15px">👤 ${esc(DB.user?.email || "")} (지금 로그인)</p>
+      ${f.members.filter((m) => m.email !== DB.user?.email).map((m) => `<p style="margin:4px 0;font-size:15px">👤 ${esc(m.email || "가족")} · ${kdt(m.created_at)} 가입</p>`).join("")}
+    </div>
+    ${open.length ? `<div class="field"><label>사용 대기 중인 코드</label>${open.map((i) => `<p style="margin:4px 0;font-size:15px"><b style="font-size:20px;letter-spacing:3px">${esc(i.code)}</b> · ${kdt(i.expires_at)}까지</p>`).join("")}</div>` : ""}
+    <div id="newInv"></div>
+    <button class="btn small" id="mkInv">초대 코드 만들기</button>
+    ${used.length ? `<p class="muted" style="font-size:13px;margin:0">사용된 코드: ${used.map((i) => `${esc(i.code)} → ${esc(i.used_email || "")}`).join(", ")}</p>` : ""}`;
+  document.getElementById("mkInv").onclick = async () => {
+    const b = document.getElementById("mkInv"); b.disabled = true;
+    try {
+      const inv = await DB.createInvite();
+      const link = `${location.origin}${location.pathname}?invite=${inv.code}`;
+      const msg = `지후 English 가족 초대 코드: ${inv.code}\n아래 주소를 열고 이메일로 가입해 주세요 (${kdt(inv.expires_at)}까지)\n${link}`;
+      document.getElementById("newInv").innerHTML = `<div class="card" style="background:#FFF6E8;text-align:center">
+        <p class="muted" style="margin:0">새 초대 코드</p><p style="font-size:30px;font-weight:700;letter-spacing:6px;margin:6px 0">${esc(inv.code)}</p>
+        <p class="muted" style="font-size:13px;margin:0 0 10px">${kdt(inv.expires_at)}까지 · 한 번만 사용</p>
+        <button class="btn small" id="shareInv">${navigator.share ? "카톡·문자로 보내기" : "초대 문구 복사"}</button></div>`;
+      document.getElementById("shareInv").onclick = async () => {
+        try {
+          if (navigator.share) await navigator.share({ title: "지후 English 가족 초대", text: msg });
+          else { await navigator.clipboard.writeText(msg); notice("초대 문구를 복사했어요"); }
+        } catch {}
+      };
+    } catch (e) { notice(e.message); }
+    b.disabled = false;
+  };
+}
+
 // ═════════════════════════ 이벤트 ═════════════════════════
 function bind() {
+  familyBlock();
   document.getElementById("refresh").onclick = load;
 
   const wk = document.getElementById("wk");

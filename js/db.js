@@ -60,6 +60,45 @@ export const DB = {
     LS.set("je.user", { id: data.user.id, email: data.user.email });
   },
 
+  // 초대 코드로 가입 (supabase/family.sql 필요) — 코드가 없거나 틀리면 서버가 가입을 막음
+  async signUp(email, password, code) {
+    if (!this.client) throw new Error("인터넷 연결을 확인해 주세요.");
+    code = (code || "").trim().toUpperCase();
+    const chk = await this.client.rpc("check_family_invite", { p_code: code });
+    if (chk.error) throw new Error(/function|schema cache/i.test(chk.error.message) ? "가족 초대 기능이 아직 설정되지 않았어요 (family.sql 실행 필요)" : chk.error.message);
+    if (!chk.data) throw new Error("초대 코드가 맞지 않거나 만료됐어요.");
+    const { data, error } = await this.client.auth.signUp({
+      email, password, options: { data: { invite_code: code }, emailRedirectTo: location.href.split("#")[0] },
+    });
+    if (error) {
+      if (/database error|saving new user/i.test(error.message)) throw new Error("초대 코드가 맞지 않거나 만료됐어요.");
+      if (/already registered|already exists/i.test(error.message)) throw new Error("이미 가입된 이메일이에요. 로그인해 주세요.");
+      if (/password/i.test(error.message)) throw new Error("비밀번호는 6자 이상으로 해 주세요.");
+      throw new Error(error.message);
+    }
+    if (!data.session) return { needsConfirm: true };   // 이메일 인증이 켜져 있는 경우
+    this.user = data.user;
+    LS.set("je.user", { id: data.user.id, email: data.user.email });
+    return { needsConfirm: false };
+  },
+
+  // 가족: 초대 코드 만들기 · 구성원 보기
+  async createInvite() {
+    const { data, error } = await this.client.rpc("create_family_invite", { p_learner: this.learner.id });
+    if (error) throw new Error(/function|schema cache/i.test(error.message) ? "가족 초대 기능이 아직 설정되지 않았어요 (Supabase에서 family.sql 실행 필요)" : error.message);
+    return Array.isArray(data) ? data[0] : data;
+  },
+  async loadFamily() {
+    if (!this.remote) return null;
+    const [m, inv] = await Promise.all([
+      this.client.from("learner_members").select("email, created_at").eq("learner_id", this.learner.id).order("created_at"),
+      this.client.from("family_invites").select("code, expires_at, used_at, used_email").eq("learner_id", this.learner.id)
+        .order("created_at", { ascending: false }).limit(10),
+    ]);
+    if (m.error) return { missing: true };
+    return { members: m.data || [], invites: inv.data || [] };
+  },
+
   async signOut() {
     try { await this.client?.auth.signOut(); } catch {}
     this.user = null; this.learner = null;
