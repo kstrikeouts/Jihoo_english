@@ -31,7 +31,39 @@ async function boot() {
   await start();
 }
 
+// 처음 한 번: 이 기기가 누구 것인지 고르기 (테스트 기기는 기록을 지후 계정에 올리지 않음)
+function pickDevice() {
+  return new Promise((resolve) => {
+    $tabs.classList.add("hidden");
+    $app.className = "app focus";
+    $app.innerHTML = `<div class="login stack device-pick">
+      <div class="logo">📱</div>
+      <h1>이 기기는 누구 거예요?</h1>
+      <p class="muted" style="text-align:center">처음 한 번만 골라요</p>
+      <button class="btn dev" data-d="jihu"><b>🦊 지후 폰</b><small>학습 기록이 지후 계정에 저장돼요</small></button>
+      <button class="btn ghost dev" data-d="test"><b>🧪 부모님 (테스트)</b><small>이 폰에만 저장돼요. 지후 기록에 섞이지 않아요</small></button></div>`;
+    $app.onclick = (e) => {
+      const b = e.target.closest("[data-d]");
+      if (!b) return;
+      $app.onclick = null;
+      DB.setDevice(b.dataset.d);
+      resolve(b.dataset.d);
+    };
+  });
+}
+async function switchDevice() {
+  const toTest = DB.device !== "test";
+  const ok = await ask(toTest
+    ? "이 기기를 '부모님(테스트)'로 바꿀까요? 앞으로 이 폰의 학습은 지후 기록에 저장되지 않아요."
+    : "이 기기를 '지후 폰'으로 바꿀까요? 앞으로 이 폰의 학습이 지후 기록으로 저장돼요.", "바꾸기", "취소");
+  if (!ok) return;
+  DB.setDevice(toTest ? "test" : "jihu");
+  location.reload();
+}
+
 async function start() {
+  if (DB.mode === "cloud" && !DB.device) await pickDevice();
+  DB.useDevice();
   try { await DB.loadLearner(); } catch (e) { return renderError(e.message); }
   const mig = DB.localSummary();
   if (mig) {
@@ -83,11 +115,13 @@ function renderLogin() {
   };
 }
 
+window.__switchDevice = () => { if (DB.mode === "cloud") switchDevice(); };
+
 // ═════════════════════════ 공통 계산 ═════════════════════════
 const today = () => S.todayKST();
 const dayMap = () => S.studyDates(st.sessions);
 const totalXP = () => st.sessions.reduce((a, s) => a + (s.xp || 0), 0);
-const syncText = () => DB.mode === "local" ? "📱 체험 모드" : DB.pending() ? `☁️ 전송 대기 ${DB.pending()}` : "☁️ 저장됨";
+const syncText = () => DB.mode === "local" ? "📱 체험 모드" : DB.sandbox ? "🧪 테스트 기기" : DB.pending() ? `☁️ 전송 대기 ${DB.pending()}` : "☁️ 저장됨";
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function callName() {
@@ -173,7 +207,7 @@ $tabs.addEventListener("click", (e) => { const b = e.target.closest("button[data
 function statusbar() {
   return `<div class="statusbar">
     <div class="chips"><span class="chip fire">🔥 ${S.streak(dayMap())}일</span><span class="chip star">⭐ ${totalXP()}</span></div>
-    <span class="sync" id="sync">${syncText()}</span></div>`;
+    <button class="sync${DB.sandbox ? " test" : ""}" id="sync" onclick="window.__switchDevice()">${syncText()}</button></div>`;
 }
 
 // 학년별 도장판: 한 학년 = 학습 30일 + 복습 6일 = 36칸

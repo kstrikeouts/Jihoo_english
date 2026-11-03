@@ -18,6 +18,7 @@ export const DB = {
   user: null,
   learner: null,
   _flushing: false,
+  sandbox: false,         // 테스트 기기: 기록을 이 폰에만 저장 (지후 계정에는 올리지 않음)
   onSync: null,           // (pendingCount) => void
 
   get configured() { return !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY); },
@@ -44,6 +45,12 @@ export const DB = {
   },
 
   needsLogin() { return this.mode === "cloud" && !this.user; },
+
+  // 이 기기가 누구 것인지: 'jihu' | 'test' | null(아직 안 고름)
+  get device() { return LS.get("je.device", null); },
+  setDevice(d) { LS.set("je.device", d); this.sandbox = d === "test"; },
+  useDevice() { this.sandbox = this.mode === "cloud" && this.device === "test"; },
+  get remote() { return this.mode === "cloud" && !this.sandbox && !!this.client && navigator.onLine; },
 
   async signIn(email, password) {
     if (!this.client) throw new Error("인터넷 연결을 확인해 주세요.");
@@ -86,17 +93,19 @@ export const DB = {
           this.learner = ins.data;
         }
         LS.set("je.learner", this.learner);
+        if (this.sandbox) this.learner = { ...this.learner, id: "test" };
         return this.learner;
       }
     }
-    if (cached && cached.id !== "local") { this.learner = cached; return cached; }
+    if (cached && cached.id !== "local") { this.learner = this.sandbox ? { ...cached, id: "test" } : cached; return this.learner; }
     throw new Error("처음 한 번은 인터넷 연결이 필요해요.");
   },
 
   async updateLearner(patch) {
     this.learner = { ...this.learner, ...patch };
     LS.set("je.learner", this.learner);
-    if (this.mode === "cloud") this.enqueue("learners", "update", { id: this.learner.id, ...patch }, null, "learner");
+    if (this.mode === "cloud" && !this.sandbox) this.enqueue("learners", "update", { id: this.learner.id, ...patch }, null, "learner");
+    else if (this.sandbox) LS.set("je.learner", { ...LS.get("je.learner", {}), ...patch, id: LS.get("je.learner", {}).id });
     await this.flush();
   },
 
@@ -105,7 +114,7 @@ export const DB = {
   // ── 체험 모드(이 폰에만 저장)에서 쌓은 기록 → 클라우드로 옮기기 ──
   // 첫 로그인 때 한 번. 같은 기록을 다시 올려도 덮어쓰기라 중복되지 않음
   localSummary() {
-    if (this.mode !== "cloud" || !this.learner || this.learner.id === "local") return null;
+    if (this.mode !== "cloud" || this.sandbox || !this.learner || this.learner.id === "local") return null;
     if (LS.get("je.migrated", null) === this.learner.id) return null;
     const days = LS.get("je.local.days", {}), prog = LS.get("je.local.progress", {});
     const passed = Object.values(days).filter((d) => d.status === "passed").map((d) => d.day);
@@ -145,7 +154,7 @@ export const DB = {
   // ── 단어 진도 ─────────────────────────────────────────────
   async loadProgress() {
     const local = LS.get(this.k("progress"), {});
-    if (this.mode === "cloud" && this.client && navigator.onLine) {
+    if (this.remote) {
       try {
         const remote = await this.selectAll("word_progress", (q) => q.eq("learner_id", this.learner.id));
         for (const r of remote) {
@@ -183,7 +192,7 @@ export const DB = {
 
   async loadSessions() {
     let list = LS.get(this.k("sessions"), []);
-    if (this.mode === "cloud" && this.client && navigator.onLine) {
+    if (this.remote) {
       try {
         const since = new Date(Date.now() - 400 * 864e5).toISOString();
         const remote = await this.selectAll("study_sessions", (q) =>
@@ -198,7 +207,7 @@ export const DB = {
   },
 
   async loadAnswers(days = 120) {
-    if (this.mode === "cloud" && this.client && navigator.onLine) {
+    if (this.remote) {
       const since = new Date(Date.now() - days * 864e5).toISOString();
       const { data, error } = await this.client.from("answer_logs").select("*")
         .eq("learner_id", this.learner.id).gte("answered_at", since)
@@ -211,7 +220,7 @@ export const DB = {
   // ── Day 진행 (하루 7개 묶음 · 테스트 통과 기록) ──────────
   async loadDays() {
     const local = LS.get(this.k("days"), {});
-    if (this.mode === "cloud" && this.client && navigator.onLine) {
+    if (this.remote) {
       try {
         const remote = await this.selectAll("day_progress", (q) => q.eq("learner_id", this.learner.id));
         for (const r of remote) {
@@ -232,7 +241,7 @@ export const DB = {
 
   // ── 보상 ──────────────────────────────────────────────────
   async loadRewards() {
-    if (this.mode === "cloud" && this.client && navigator.onLine) {
+    if (this.remote) {
       const { data, error } = await this.client.from("rewards").select("*")
         .eq("learner_id", this.learner.id).order("created_at");
       if (!error) { LS.set(this.k("rewards"), data); return data; }
@@ -255,7 +264,7 @@ export const DB = {
 
   // ── 전송 대기열 ───────────────────────────────────────────
   enqueue(table, op, row, onConflict, key, ignoreDuplicates = false) {
-    if (this.mode !== "cloud") return;
+    if (this.mode !== "cloud" || this.sandbox) return;
     const q = LS.get(QKEY, []);
     const existing = key ? q.findIndex((x) => x.key === key) : -1;
     const item = { table, op, row, onConflict, key, ignoreDuplicates, attempts: 0 };

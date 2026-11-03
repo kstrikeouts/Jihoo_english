@@ -482,3 +482,10 @@ body.is-listening .wordcard { box-shadow: 0 0 0 4px rgba(59,167,255,.35), var(--
 body.is-speaking .speak-panel { box-shadow: 0 0 0 3px rgba(255,91,91,.4), var(--shadow); }
 .btn.sky.on, .btn.on#mic { background: var(--red); box-shadow: 0 5px 0 var(--red-d); animation: pulse 1s infinite; }
 @media (prefers-reduced-motion: reduce) { .mp-bars i, .sbtn.playing, .speaker.playing, .btn.on#mic { animation: none !important; } }
+
+/* 기기 고르기 · 테스트 기기 표시 */
+.device-pick .dev { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 18px 16px; }
+.device-pick .dev b { font-size: 22px; }
+.device-pick .dev small { font-size: 14px; font-weight: 400; opacity: .85; }
+button.sync { background: none; border: 0; padding: 6px 4px; font: inherit; color: var(--muted); cursor: pointer; }
+button.sync.test { background: #FFF1D6; color: #9A5B00; border-radius: 999px; padding: 6px 12px; font-weight: 700; }
