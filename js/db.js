@@ -67,6 +67,7 @@ export const DB = {
         daily_new_target: CONFIG.DAILY_NEW, parent_pin: null, settings: {},
       };
       LS.set("je.learner", this.learner);
+      LS.set("je.local.learner", this.learner);
       return this.learner;
     }
     const cached = LS.get("je.learner", null);
@@ -75,8 +76,11 @@ export const DB = {
       if (!error) {
         if (data.length) this.learner = data[0];
         else {
+          // 체험 모드에서 쓰던 학년·PIN 설정을 이어받음
+          const prev = cached?.id === "local" ? cached : LS.get("je.local.learner", null);
           const ins = await this.client.from("learners")
-            .insert({ name: CONFIG.LEARNER_NAME, grade: CONFIG.DEFAULT_GRADE, daily_new_target: CONFIG.DAILY_NEW })
+            .insert({ name: CONFIG.LEARNER_NAME, grade: prev?.grade || CONFIG.DEFAULT_GRADE,
+              daily_new_target: CONFIG.DAILY_NEW, parent_pin: prev?.parent_pin || null, settings: prev?.settings || {} })
             .select().single();
           if (ins.error) throw ins.error;
           this.learner = ins.data;
@@ -85,7 +89,7 @@ export const DB = {
         return this.learner;
       }
     }
-    if (cached) { this.learner = cached; return cached; }
+    if (cached && cached.id !== "local") { this.learner = cached; return cached; }
     throw new Error("처음 한 번은 인터넷 연결이 필요해요.");
   },
 
@@ -97,6 +101,46 @@ export const DB = {
   },
 
   k(name) { return `je.${this.learner.id}.${name}`; },
+
+  // ── 체험 모드(이 폰에만 저장)에서 쌓은 기록 → 클라우드로 옮기기 ──
+  // 첫 로그인 때 한 번. 같은 기록을 다시 올려도 덮어쓰기라 중복되지 않음
+  localSummary() {
+    if (this.mode !== "cloud" || !this.learner || this.learner.id === "local") return null;
+    if (LS.get("je.migrated", null) === this.learner.id) return null;
+    const days = LS.get("je.local.days", {}), prog = LS.get("je.local.progress", {});
+    const passed = Object.values(days).filter((d) => d.status === "passed").map((d) => d.day);
+    const words = Object.keys(prog).length;
+    if (!passed.length && !words && !LS.get("je.local.sessions", []).length) return null;
+    return { passed: passed.length, lastDay: passed.length ? Math.max(...passed) : 0, words };
+  },
+  skipMigration() { LS.set("je.migrated", this.learner.id); },
+  migrateLocal() {
+    const id = this.learner.id;
+    const re = (r) => ({ ...r, learner_id: id });
+    const merge = (name, incoming, keyOf) => {
+      const cur = LS.get(this.k(name), Array.isArray(incoming) ? [] : {});
+      if (Array.isArray(cur)) {
+        const seen = new Set(cur.map(keyOf));
+        LS.set(this.k(name), cur.concat(incoming.filter((x) => !seen.has(keyOf(x)))));
+      } else LS.set(this.k(name), { ...incoming, ...cur });
+    };
+    const prog = Object.fromEntries(Object.entries(LS.get("je.local.progress", {})).map(([k, v]) => [k, re(v)]));
+    const days = Object.fromEntries(Object.entries(LS.get("je.local.days", {})).map(([k, v]) => [k, re(v)]));
+    const sessions = LS.get("je.local.sessions", []).map(re);
+    const sids = new Set(sessions.map((s) => s.id));
+    const answers = LS.get("je.local.answers", []).map((a) => ({ ...re(a), session_id: sids.has(a.session_id) ? a.session_id : null }));
+    const rewards = LS.get("je.local.rewards", []).map(re);
+    merge("progress", prog); merge("days", days);
+    merge("sessions", sessions, (x) => x.id); merge("answers", answers, (x) => x.client_id); merge("rewards", rewards, (x) => x.id);
+    // 순서: 세션 → 응답(세션을 참조) → 나머지
+    for (const s of sessions) this.enqueue("study_sessions", "upsert", s, "id", `ss:${s.id}`);
+    for (const a of answers) this.enqueue("answer_logs", "upsert", a, "client_id", `al:${a.client_id}`, true);
+    for (const p of Object.values(prog)) this.enqueue("word_progress", "upsert", p, "learner_id,word_id", `wp:${p.word_id}`);
+    for (const d of Object.values(days)) this.enqueue("day_progress", "upsert", d, "learner_id,day", `dp:${d.day}`);
+    for (const r of rewards) this.enqueue("rewards", "upsert", r, "id", `rw:${r.id}`);
+    LS.set("je.migrated", id);  // 원래 체험 기록(je.local.*)은 백업으로 남겨 둠
+    return this.flush();
+  },
 
   // ── 단어 진도 ─────────────────────────────────────────────
   async loadProgress() {

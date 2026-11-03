@@ -33,6 +33,12 @@ async function boot() {
 
 async function start() {
   try { await DB.loadLearner(); } catch (e) { return renderError(e.message); }
+  const mig = DB.localSummary();
+  if (mig) {
+    const what = mig.passed ? `Day ${mig.lastDay}까지 통과 기록(단어 ${mig.words}개)` : `단어 ${mig.words}개 학습 기록`;
+    if (await ask(`이 폰에 저장된 ${what}이 있어요. 지후 계정으로 옮길까요?`, "옮기기", "새로 시작")) await DB.migrateLocal();
+    else DB.skipMigration();
+  }
   const [lists] = await Promise.all([
     Promise.all(CONFIG.WORD_FILES.map((f) => fetch(f).then((r) => r.json()))),
     loadAudioManifest(),
