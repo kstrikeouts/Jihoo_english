@@ -5,7 +5,7 @@ import { DB } from "./db.js";
 import * as S from "./srs.js";
 import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3, preloadSay, setRecording, withTimeout } from "./audio.js";
 import * as P from "./pitch.js";
-import { canRecognize, listenOnce, scoreSpeech, scoreSentence, normalize, karaokeMatch } from "./speech.js";
+import { canRecognize, listenOnce, scoreSpeech, scoreSentence, strictJudge, normalize, karaokeMatch } from "./speech.js";
 import { ask } from "./ui.js";
 import { celebrate } from "./celebrate.js";
 
@@ -511,7 +511,9 @@ async function captureSpeech({ timeoutMs, onInterim, onLive }) {
 function stopSpeaking() { try { st.speakCtrl?.stop?.(); } catch {} }
 
 // ═════════════ 따라 말하기: 정확도 판정 + 억양·강세 그래프 ═════════════
-const selfMode = () => !canRecognize || st.srBroken; // 마이크(받아쓰기)가 안 되면 스스로 체크
+const selfMode = () => !canRecognize; // 받아쓰기 기능 자체가 없는 브라우저만 스스로 체크 (아이폰 사파리는 항상 판정)
+const MIC_HELP = "받아쓰기가 꺼져 있어요. 아이폰 설정 → 일반 → 키보드 → '받아쓰기 활성화'를 켜고, 마이크 허용을 눌러 주세요. 그다음 🎤를 다시 눌러요";
+const isMicOff = (e) => /not-allowed|service-not-allowed|unsupported/.test(e?.message || "");
 
 // ── 노래방 자막: 말하는 동안 들린 단어부터 색이 차오름 ──
 function karaHTML(text, key = "") {
@@ -579,14 +581,13 @@ function makeSpeaker(w) {
       });
     } catch (e) {
       document.getElementById("kara")?.classList.remove("listening"); karaUpdate("");
-      if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
-        st.srBroken = true; heard.textContent = "마이크(받아쓰기)가 꺼져 있어요. 소리 내어 말한 다음 버튼을 눌러요";
-      } else heard.textContent = "잘 안 들렸어요. 🎤 버튼을 누르고 다시 말해 볼까요?";
+      if (isMicOff(e)) heard.textContent = MIC_HELP;
+      else heard.textContent = "잘 안 들렸어요. 🎤 버튼을 누르고 다시 말해 볼까요?";
       return false;
     } finally {
       sp.busy = false;
       const m = document.getElementById("mic");
-      if (m) { m.classList.remove("on"); m.textContent = st.srBroken ? "🗣️ 말했어요" : label; }
+      if (m) { m.classList.remove("on"); m.textContent = label; }
       document.querySelector(".wordcard")?.classList.remove("speaking");
     }
     const alts = res.alts;
@@ -601,12 +602,16 @@ function makeSpeaker(w) {
       : kidShape ? "원어민 그래프는 음성 파일이 있을 때 나와요" : "높낮이 = 억양 · 막대 = 강세";
     // 정확도 판정
     let ok, transcript;
-    if (sp.kind === "w") { const r = scoreSpeech(target, alts); ok = r.score >= 3; transcript = r.transcript; }
-    else { const r = scoreSentence(target, alts, sentenceParts(w).keys); ok = r.pass; transcript = r.transcript; }
+    const r = strictJudge(target, alts, sp.kind === "w" ? [] : sentenceParts(w).keys);
+    ok = r.pass; transcript = r.transcript;
     karaUpdate(transcript, true);
     record(w, { mode: sp.kind === "w" ? "speak" : "chunk_speak", phase: "practice", correct: ok, score: ok ? 3 : 1, transcript });
     if (ok) { fx("ok"); heard.textContent = `"${transcript}" — 정확해요! 👍`; sp.fails = 0; }
-    else { sp.fails++; heard.textContent = `"${transcript}" 라고 들렸어요. 다시 또박또박!`; }
+    else {
+      sp.fails++;
+      const tip = sp.kind === "w" ? "다시 또박또박!" : r.wrong.length ? `"${r.wrong.slice(0, 3).join(", ")}" 부분을 또렷하게!` : "빠진 말 없이 다시!";
+      heard.textContent = transcript ? `"${transcript}" 라고 들렸어요. ${tip}` : "잘 안 들렸어요. 조금 더 크게!";
+    }
     return ok;
   };
   return sp;
@@ -659,10 +664,24 @@ function stepIntro(step, w) {
 }
 
 // 인식이 계속 안 될 때 막히지 않도록 (5번 실패 후)
+// 5번 실패: 이 단어는 이번 라운드 맨 뒤로 보내 다시 도전 (그냥 통과시키지 않음).
+// 다시 왔을 때도 5번 안 되면 넘어가되, 틀린 기록으로 남아 복습에 더 자주 나옴
+function requeue(step) {
+  const L = st.L;
+  let last = L.i;
+  for (let k = L.i + 1; k < L.steps.length; k++) {
+    const s2 = L.steps[k];
+    if (s2.type === "echo" && s2.round === step.round) last = k;
+    else if (s2.type === "phase") break;
+  }
+  L.steps.splice(last + 1, 0, { ...step, retry: true });
+  stopAll(); nextStep();
+}
 function showSkip(fn) {
   const box = document.getElementById("skipBox");
   if (!box || box.childElementCount) return;
-  box.innerHTML = `<button class="hint-btn" id="skipSay">계속 안 되면 다음에 다시 해요 ▶</button>`;
+  const retry = st.L?.steps[st.L.i]?.retry;
+  box.innerHTML = `<button class="hint-btn" id="skipSay">${retry ? "오늘은 여기까지, 복습 때 다시 해요 ▶" : "이 단어는 조금 뒤에 다시 해요 ▶"}</button>`;
   document.getElementById("skipSay").onclick = () => { box.innerHTML = ""; fn(); };
 }
 
@@ -698,7 +717,7 @@ function stepEcho(step, w) {
     const r = await sp.attempt();
     if (r === null) return;            // '다 말했어요'로 멈춘 경우 — 판정은 진행 중인 쪽에서
     if (r) pass();
-    else if (sp.fails >= 5) showSkip(pass);
+    else if (sp.fails >= 5) showSkip(step.retry ? () => { stopAll(); nextStep(); } : () => requeue(step));
   };
 }
 
@@ -719,7 +738,7 @@ function testPhase(d) {
   const order = S.shuffle(isReviewDay(d) ? S.shuffle(ws).slice(0, 6) : ws)
     .filter((w) => orderTokens(w).length >= 3).map((w) => ({ type: "test", id: w.id, mode: "order", part: 3 }));
   // 4부: 문장 말하기 (마이크·받아쓰기가 될 때만) — 학습 Day 3문장, 복습 Day 5문장
-  const talk = canRecognize && !st.srBroken
+  const talk = canRecognize
     ? S.shuffle(ws).slice(0, isReviewDay(d) ? 5 : 3).map((w) => ({ type: "test", id: w.id, mode: "chunk_speak", part: 4 })) : [];
   st.L.test = { day: d, results: [], total: choice.length + spell.length + order.length + talk.length };
   const steps = [{ type: "testintro", day: d, n1: choice.length, n2: spell.length, n3: order.length, n4: talk.length }, ...choice,
@@ -1014,7 +1033,7 @@ function quizSentence(step, w) {
     karaReset();
     try {
       const { alts } = await captureSpeech({ timeoutMs: 9000, onInterim: (t) => karaUpdate(t) });
-      const r = scoreSentence(target, alts, keys);
+      const r = strictJudge(target, alts, keys);
       document.getElementById("kara")?.classList.remove("listening");
       karaUpdate(r.transcript, true);
       tries++;
@@ -1024,16 +1043,13 @@ function quizSentence(step, w) {
         heard.textContent = `"${r.transcript}" — 정확해요!`;
         answer(step, w, true, false, { score: 3, transcript: r.transcript, quiet: true });
       } else {
-        heard.textContent = `"${r.transcript}" 라고 들렸어요. ${r.missing.length ? `"${r.missing.join(", ")}" 부분을 또렷하게!` : "조금만 더 정확하게!"}`;
+        const bad = r.missing.length ? r.missing : r.wrong.slice(0, 3);
+        heard.textContent = r.transcript ? `"${r.transcript}" 라고 들렸어요. ${bad.length ? `"${bad.join(", ")}" 부분을 또렷하게!` : "빠진 말 없이 다시!"}` : "잘 안 들렸어요. 조금 더 크게!";
         if (tries >= 3) giveUp();
       }
     } catch (e) {
-      if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) {
-        st.srBroken = true;
-        heard.textContent = "마이크(받아쓰기)가 꺼져 있어서 이 문제는 넘어가요";
-        more.innerHTML = `<button class="btn small" id="skip">계속</button>`;
-        document.getElementById("skip").onclick = () => { if (st.L?.test) st.L.test.total--; nextStep(); };
-      } else {
+      if (isMicOff(e)) heard.textContent = MIC_HELP;
+      else {
         heard.textContent = "잘 안 들렸어요. 버튼을 누르고 다시 읽어 보세요";
         tries++; if (tries >= 3) giveUp();
       }
@@ -1049,7 +1065,7 @@ function quizSentence(step, w) {
 // 복습: 뜻 보고 영어로 말하기 (인식 안 되면 플래시카드 자가 체크)
 function quizSpeak(step, w) {
   const en = S.spoken(w);
-  const selfCheck = !canRecognize || st.srBroken;
+  const selfCheck = !canRecognize;
   lessonFrame(`<p class="phase">복습 · 말하기</p><p class="prompt">영어로 말해 보세요</p>
     <div class="card wordcard" style="padding:18px"><div class="emoji" style="font-size:64px">${w.emoji}</div>
       <div class="meaning">${esc(w.meaning)}</div><div class="word hidden" id="ans">${esc(en)}</div></div>
@@ -1087,18 +1103,17 @@ function quizSpeak(step, w) {
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
     mic.classList.add("on"); heard.textContent = "듣고 있어요…";
     try {
-      const r = scoreSpeech(en, (await captureSpeech({ timeoutMs: 6000 })).alts);
+      const r = strictJudge(en, (await captureSpeech({ timeoutMs: 6000 })).alts);
       tries++;
       stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
       heard.textContent = `"${r.transcript}" 라고 들렸어요`;
-      if (r.score >= 2 || tries >= 2) {
+      if (r.pass || tries >= 2) {   // 정확할 때만 정답. 두 번 틀리면 정답을 보여 주고 '틀림'으로 기록
         answered = true;
         document.getElementById("ans").classList.remove("hidden");
-        answer(step, w, r.score >= 1, r.score === 1, { score: r.score, transcript: r.transcript });
+        answer(step, w, r.pass, false, { score: r.score, transcript: r.transcript });
       } else heard.textContent += " · 한 번 더!";
     } catch (e) {
-      if (/not-allowed|service-not-allowed|unsupported/.test(e.message)) { st.srBroken = true; quizSpeak(step, w); return; }
-      heard.textContent = "잘 안 들렸어요. 다시 눌러 주세요";
+      heard.textContent = isMicOff(e) ? MIC_HELP : "잘 안 들렸어요. 다시 눌러 주세요";
     } finally { busy = false; document.getElementById("mic")?.classList.remove("on"); }
   };
 }

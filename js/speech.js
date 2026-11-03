@@ -112,3 +112,33 @@ export function karaokeMatch(target, heard) {
   });
   return { hit, reached: last + 1 };
 }
+
+// ── 엄격 판정 (따라 말하기 · 문장 말하기) ──
+// 받아쓰기의 "첫 번째 결과"만 사용 (예비 후보 중 하나라도 맞으면 통과시키던 방식은 너무 관대함)
+// 단어 단위로 비교: 짧은 표현은 틀린 단어 0개, 6단어 이상 문장은 앞뒤 군더더기 없이 1개까지만 허용
+function wordLev(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[a.length][b.length];
+}
+export function strictJudge(target, alternatives, keyWords = []) {
+  const heard = alternatives[0] || "";
+  const t = normalize(target).split(" ").filter(Boolean);
+  let h = normalize(heard).split(" ").filter(Boolean);
+  // 앞뒤에 붙은 군소리(uh, um, the 등)는 한 단어까지 봐줌 — 목표 표현이 그대로 들어 있을 때만
+  const joined = " " + h.join(" ") + " ", tj = " " + t.join(" ") + " ";
+  if (h.length === t.length + 1 && joined.includes(tj)) h = t.slice();
+  const errors = wordLev(h, t);
+  const allow = t.length >= 6 ? 1 : 0;
+  const keys = keyWords.map(normalize).filter(Boolean);
+  const missing = keys.filter((k) => !k.split(" ").every((x) => h.includes(x)));
+  const pass = h.length > 0 && errors <= allow && !missing.length;
+  const sim = t.length ? Math.max(0, 1 - errors / Math.max(t.length, h.length)) : 0;
+  const score = pass ? 3 : sim >= 0.6 ? 2 : sim > 0 ? 1 : 0;
+  // 틀린 단어 표시용
+  const wrong = t.filter((x) => !h.includes(x));
+  return { pass, score, transcript: heard, errors, missing, wrong };
+}
