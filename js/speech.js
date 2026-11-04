@@ -142,3 +142,44 @@ export function strictJudge(target, alternatives, keyWords = []) {
   const wrong = t.filter((x) => !h.includes(x));
   return { pass, score, transcript: heard, errors, missing, wrong };
 }
+
+// ── 완화된 판정 (2026-11 조정) ──
+// · 받아쓰기 후보 상위 3개 중 하나라도 맞으면 인정
+// · 단어/짧은 표현: 철자 기준 70% 이상 비슷하면 통과 ("break fast" → breakfast ○)
+// · 문장: 단어의 70% 이상이 순서대로 들리고(비슷한 단어도 인정), 오늘 배운 단어(핵심어)가 들리면 통과
+const near = (a, b) => a === b || (a && b && lev(a, b) <= (b.length >= 7 ? 2 : b.length >= 3 ? 1 : 0));
+function inOrderHits(t, h) {
+  let j = 0, hits = 0;
+  for (const tw of t) {
+    for (let k = j; k < h.length; k++) {
+      if (near(h[k], tw)) { hits++; j = k + 1; break; }
+      if (k + 1 < h.length && near(h[k] + h[k + 1], tw)) { hits++; j = k + 2; break; } // "break fast" = breakfast
+    }
+  }
+  return hits;
+}
+export function relaxedJudge(target, alternatives, keyWords = []) {
+  const t = normalize(target).split(" ").filter(Boolean);
+  const keys = keyWords.map(normalize).filter(Boolean);
+  const short = t.length <= 2;
+  let best = null;
+  for (const alt of alternatives.slice(0, 3)) {
+    const hs = normalize(alt), h = hs.split(" ").filter(Boolean);
+    if (!h.length) continue;
+    const ts = t.join(" ");
+    const charSim = 1 - lev(hs, ts) / Math.max(hs.length, ts.length);
+    const hits = inOrderHits(t, h);
+    const ratio = t.length ? hits / t.length : 0;
+    const contains = (" " + hs + " ").includes(" " + ts + " ");
+    // 핵심어: 붙여 쓴 형태("break fast")도 인정
+    const flat = h.join("");
+    const missing = keys.filter((k) => !(k.split(" ").every((x) => h.some((y) => near(y, x))) || flat.includes(k.replace(/ /g, ""))));
+    const pass = short ? (contains || charSim >= 0.7 || ratio === 1) : (ratio >= 0.7 && !missing.length);
+    const sim = short ? Math.max(charSim, contains ? 1 : 0) : ratio;
+    const cand = { pass, sim, transcript: alt, missing, wrong: t.filter((x) => !h.some((y) => near(y, x))) };
+    if (!best || (cand.pass && !best.pass) || (cand.pass === best.pass && cand.sim > best.sim)) best = cand;
+  }
+  if (!best) return { pass: false, score: 0, transcript: alternatives[0] || "", missing: keys, wrong: t };
+  best.score = best.pass ? 3 : best.sim >= 0.5 ? 2 : best.sim > 0 ? 1 : 0;
+  return best;
+}

@@ -466,8 +466,7 @@ p.muted, .muted { line-height: 1.45; }
 .mp-bars i:nth-child(4) { animation-delay: .45s; } .mp-bars i:nth-child(5) { animation-delay: .6s; }
 @keyframes eq { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
 /* 말할 때: 막대 높이가 실제 목소리 크기를 따라감 */
-.mode-pill.speak .mp-bars i { animation: none; transform: scaleY(calc(.2 + var(--lvl, 0) * .8)); transition: transform .08s; }
-.mode-pill.speak .mp-bars i:nth-child(2), .mode-pill.speak .mp-bars i:nth-child(4) { transform: scaleY(calc(.15 + var(--lvl, 0) * .6)); }
+/* 말하는 중: 막대가 출렁이는 애니메이션 (그래프 마이크를 없애 소리 크기 대신 움직임으로 표시) */
 
 /* 듣는 중: 재생 중인 버튼과 글자 강조 */
 .sbtn.playing { box-shadow: 0 0 0 4px rgba(59,167,255,.35), 0 4px 0 var(--sky-d); animation: pulse 1s infinite; }

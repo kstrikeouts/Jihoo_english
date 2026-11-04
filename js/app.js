@@ -4,8 +4,7 @@ import { CONFIG } from "./config.js";
 import { DB } from "./db.js";
 import * as S from "./srs.js";
 import { say, sayText, stopAll, fx, ListenPlayer, loadAudioManifest, mp3Count, mp3Url, hasMp3, preloadSay, setRecording, withTimeout } from "./audio.js";
-import * as P from "./pitch.js";
-import { canRecognize, listenOnce, scoreSpeech, scoreSentence, strictJudge, normalize, karaokeMatch } from "./speech.js";
+import { canRecognize, listenOnce, scoreSpeech, scoreSentence, relaxedJudge, normalize, karaokeMatch } from "./speech.js";
 import { ask } from "./ui.js";
 import { celebrate } from "./celebrate.js";
 
@@ -476,32 +475,17 @@ async function captureSpeech({ timeoutMs, onInterim, onLive }) {
   stopAll(); clearTimeout(st.L?.sayT);
   setRecording(true);
   setMode("speak", "말하는 중… 지금 말해요!");
-  let cap = null;
-  if (!st.graphOff && navigator.mediaDevices?.getUserMedia) {
-    cap = new P.LiveCapture((d) => { setLevel((d.rms[d.rms.length - 1] || 0) * 8); onLive?.(d); });
-    const ok = await withTimeout(cap.start().then(() => true, () => false), 1500, false);
-    if (!ok) { try { cap.stop(); } catch {} cap = null; st.graphOff = true; } // 마이크가 늦게 열리면 그래프는 끔
-  }
+  // (억양 그래프는 없앰 — 마이크를 받아쓰기만 쓰므로 더 안정적)
   let watchdog;
   try {
-    const listen = () => listenOnce({ timeoutMs, onInterim, ctrl });
+    const interim = (t) => { onInterim?.(t); };
+    const listen = () => listenOnce({ timeoutMs, onInterim: interim, ctrl });
     const guard = new Promise((_, no) => { watchdog = setTimeout(() => no(new Error("watchdog")), timeoutMs + 3000); });
-    let alts;
-    try { alts = await Promise.race([listen(), guard]); }
-    catch (e) {
-      // 그래프용 마이크와 받아쓰기가 부딪히면 그래프를 끄고 받아쓰기만 한 번 더
-      if (cap && /audio-capture|aborted|watchdog/.test(e.message)) {
-        try { cap.stop(); } catch {} cap = null; st.graphOff = true;
-        clearTimeout(watchdog);
-        const guard2 = new Promise((_, no) => { watchdog = setTimeout(() => no(new Error("watchdog")), timeoutMs + 3000); });
-        alts = await Promise.race([listen(), guard2]);
-      } else throw e;
-    }
-    return { alts, live: cap ? cap.stop() : null };
+    const alts = await Promise.race([listen(), guard]);
+    return { alts, live: null };
   } finally {
     clearTimeout(watchdog);
     try { ctrl.stop?.(); } catch {}
-    try { cap?.stop(); } catch {}
     st.speakCtrl = null;
     setRecording(false);
     setMode(null);
@@ -538,35 +522,20 @@ function karaReset() {
 function speakPanelHTML() {
   return `<div class="speak-panel">
       <div class="sp-task" id="spTask"></div>
-      <canvas class="pgraph" id="pgraph"></canvas>
-      <div class="pg-legend"><span class="lg ref">원어민</span><span class="lg kid">지후</span>
-        <span class="pg-score" id="pgScore">높낮이 = 억양 · 막대 = 강세</span></div>
       <div class="heard" id="heard"></div>
     </div>`;
 }
 
 // 한 번 말하기를 판정: 정확하면 true. 그래프는 말하는 동안 실시간으로 그려짐
 function makeSpeaker(w) {
-  const sp = { w, kind: "w", refShape: null, fails: 0 };
-  const canvas = () => document.getElementById("pgraph");
-  sp.setKind = async (kind) => {
-    sp.kind = kind; sp.refShape = null;
-    const c = canvas(); if (!c) return;
-    P.draw(c, {});
-    if (hasMp3(w.id)) {
-      const ref = await P.refContour(mp3Url(w.id, kind));
-      if (sp.kind !== kind || !document.body.contains(c)) return;
-      sp.refShape = P.shape(ref);
-      P.draw(c, { ref: sp.refShape });
-    }
-  };
+  const sp = { w, kind: "w", fails: 0 };
+  sp.setKind = (kind) => { sp.kind = kind; };
   sp.attempt = async () => {
-    const heard = document.getElementById("heard"), score = document.getElementById("pgScore"), mic = document.getElementById("mic");
+    const heard = document.getElementById("heard"), mic = document.getElementById("mic");
     if (selfMode()) { heard.textContent = "잘했어요! 👏"; fx("ok"); return true; }
     if (sp.busy) { stopSpeaking(); return null; }   // 말하는 중에 다시 누르면 '다 말했어요'
     sp.busy = true;
     const target = sp.kind === "w" ? S.spoken(w) : w.example;
-    const liveMax = Math.max(sp.kind === "w" ? 2.5 : 4, (sp.refShape?.dur || 1) * 1.8);
     const label = mic.textContent;
     mic.classList.add("on"); mic.textContent = "■ 다 말했어요";
     heard.textContent = "듣고 있어요… 말해 보세요!";
@@ -577,7 +546,6 @@ function makeSpeaker(w) {
       res = await captureSpeech({
         timeoutMs: sp.kind === "w" ? 6000 : 9000,
         onInterim: (t) => karaUpdate(t),
-        onLive: (d) => { const c = canvas(); if (c) P.draw(c, { ref: sp.refShape, live: true, liveData: d, liveMax }); },
       });
     } catch (e) {
       document.getElementById("kara")?.classList.remove("listening"); karaUpdate("");
@@ -592,17 +560,9 @@ function makeSpeaker(w) {
     }
     const alts = res.alts;
     document.getElementById("kara")?.classList.remove("listening");
-    // 그래프 결과
-    const kidShape = res.live ? P.shape(res.live) : null;
-    const c = canvas();
-    if (c && (kidShape || sp.refShape)) P.draw(c, { ref: sp.refShape, kid: kidShape });
-    const cmp = P.compare(sp.refShape, kidShape);
-    if (score) score.innerHTML = cmp
-      ? `억양 <b>${cmp.tone ?? "–"}%</b> · 강세 <b>${cmp.stress}%</b>`
-      : kidShape ? "원어민 그래프는 음성 파일이 있을 때 나와요" : "높낮이 = 억양 · 막대 = 강세";
     // 정확도 판정
     let ok, transcript;
-    const r = strictJudge(target, alts, sp.kind === "w" ? [] : sentenceParts(w).keys);
+    const r = relaxedJudge(target, alts, sp.kind === "w" ? [] : sentenceParts(w).keys);
     ok = r.pass; transcript = r.transcript;
     karaUpdate(transcript, true);
     record(w, { mode: sp.kind === "w" ? "speak" : "chunk_speak", phase: "practice", correct: ok, score: ok ? 3 : 1, transcript });
@@ -680,8 +640,7 @@ function requeue(step) {
 function showSkip(fn) {
   const box = document.getElementById("skipBox");
   if (!box || box.childElementCount) return;
-  const retry = st.L?.steps[st.L.i]?.retry;
-  box.innerHTML = `<button class="hint-btn" id="skipSay">${retry ? "오늘은 여기까지, 복습 때 다시 해요 ▶" : "이 단어는 조금 뒤에 다시 해요 ▶"}</button>`;
+  box.innerHTML = `<p class="muted" style="margin:0 0 6px;font-size:16px">5번 도전했으니 넘어가도 돼요 👍</p><button class="btn ghost" id="skipSay">다음으로 ▶</button>`;
   document.getElementById("skipSay").onclick = () => { box.innerHTML = ""; fn(); };
 }
 
@@ -717,7 +676,7 @@ function stepEcho(step, w) {
     const r = await sp.attempt();
     if (r === null) return;            // '다 말했어요'로 멈춘 경우 — 판정은 진행 중인 쪽에서
     if (r) pass();
-    else if (sp.fails >= 5) showSkip(step.retry ? () => { stopAll(); nextStep(); } : () => requeue(step));
+    else if (sp.fails >= 5) showSkip(() => { stopAll(); nextStep(); });   // 5번 넘게 말했으면 넘어갈 수 있음 (틀린 기록으로 남음)
   };
 }
 
@@ -1015,11 +974,13 @@ function quizSentence(step, w) {
   bindSnd(w);
   let tries = 0, answered = false;
   const more = document.getElementById("more");
+  // 5번 말해도 안 되면 넘어갈 수 있음 — 테스트 통과를 막지 않고 '도움 받음'으로 기록
   const giveUp = () => {
-    more.innerHTML = `<button class="btn ghost small" id="later">다음에 다시 도전할게요</button>`;
+    if (more.childElementCount) return;
+    more.innerHTML = `<p class="muted" style="margin:0 0 6px;font-size:16px;text-align:center">5번 도전했으니 넘어가도 돼요 👍</p><button class="btn ghost" id="later">다음으로 ▶</button>`;
     document.getElementById("later").onclick = () => {
       if (answered) return; answered = true;
-      answer(step, w, false, false, { quiet: true });
+      answer(step, w, true, true, { quiet: true });
     };
   };
   let busy = false;
@@ -1033,7 +994,7 @@ function quizSentence(step, w) {
     karaReset();
     try {
       const { alts } = await captureSpeech({ timeoutMs: 9000, onInterim: (t) => karaUpdate(t) });
-      const r = strictJudge(target, alts, keys);
+      const r = relaxedJudge(target, alts, keys);
       document.getElementById("kara")?.classList.remove("listening");
       karaUpdate(r.transcript, true);
       tries++;
@@ -1045,13 +1006,13 @@ function quizSentence(step, w) {
       } else {
         const bad = r.missing.length ? r.missing : r.wrong.slice(0, 3);
         heard.textContent = r.transcript ? `"${r.transcript}" 라고 들렸어요. ${bad.length ? `"${bad.join(", ")}" 부분을 또렷하게!` : "빠진 말 없이 다시!"}` : "잘 안 들렸어요. 조금 더 크게!";
-        if (tries >= 3) giveUp();
+        if (tries >= 5) giveUp();
       }
     } catch (e) {
       if (isMicOff(e)) heard.textContent = MIC_HELP;
       else {
         heard.textContent = "잘 안 들렸어요. 버튼을 누르고 다시 읽어 보세요";
-        tries++; if (tries >= 3) giveUp();
+        tries++; if (tries >= 5) giveUp();
       }
     } finally {
       busy = false;
@@ -1103,7 +1064,7 @@ function quizSpeak(step, w) {
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
     mic.classList.add("on"); heard.textContent = "듣고 있어요…";
     try {
-      const r = strictJudge(en, (await captureSpeech({ timeoutMs: 6000 })).alts);
+      const r = relaxedJudge(en, (await captureSpeech({ timeoutMs: 6000 })).alts);
       tries++;
       stars.textContent = "⭐".repeat(r.score) + "☆".repeat(3 - r.score);
       heard.textContent = `"${r.transcript}" 라고 들렸어요`;
