@@ -333,7 +333,7 @@ function runSteps(label, steps, onDone) {
   renderStep();
 }
 function nextStep() {
-  stopSpeaking();
+  stopSpeaking(true);
   document.querySelector(".feedback")?.remove();
   clearTimeout(st.L?.auto); clearTimeout(st.L?.sayT);
   const L = st.L;
@@ -472,13 +472,14 @@ addEventListener("je-play", (e) => {
 async function captureSpeech({ timeoutMs, onInterim, onLive }) {
   const ctrl = {};
   st.speakCtrl = ctrl;
+  st.speakAt = Date.now(); st.heardAny = false; st.stopping = false;
   stopAll(); clearTimeout(st.L?.sayT);
   setRecording(true);
   setMode("speak", "말하는 중… 지금 말해요!");
   // (억양 그래프는 없앰 — 마이크를 받아쓰기만 쓰므로 더 안정적)
   let watchdog;
   try {
-    const interim = (t) => { onInterim?.(t); };
+    const interim = (t) => { if (t && t.trim()) st.heardAny = true; onInterim?.(t); };
     const listen = () => listenOnce({ timeoutMs, onInterim: interim, ctrl });
     const guard = new Promise((_, no) => { watchdog = setTimeout(() => no(new Error("watchdog")), timeoutMs + 3000); });
     const alts = await Promise.race([listen(), guard]);
@@ -486,13 +487,34 @@ async function captureSpeech({ timeoutMs, onInterim, onLive }) {
   } finally {
     clearTimeout(watchdog);
     try { ctrl.stop?.(); } catch {}
-    st.speakCtrl = null;
+    st.speakCtrl = null; st.stopping = false;
     setRecording(false);
     setMode(null);
+    // 결과가 나온 직후 1.2초는 마이크 버튼을 쉬게 함 (연타로 바로 다시 녹음되는 것 방지)
+    st.micLockUntil = Date.now() + 1200;
+    const m = document.getElementById("mic");
+    if (m) { m.classList.add("cool"); setTimeout(() => m.classList.remove("cool"), 1200); }
   }
 }
+const micLocked = () => Date.now() < (st.micLockUntil || 0);
 // 말하는 중에 마이크 버튼을 다시 누르면 '다 말했어요'
-function stopSpeaking() { try { st.speakCtrl?.stop?.(); } catch {} }
+// 단, 너무 빨리 누르면(시작 1.5초 안, 또는 아직 아무 말도 안 들렸을 때 3초 안) 무시하고 끝까지 말하도록 안내
+function stopSpeaking(force) {
+  const c = st.speakCtrl;
+  if (!c || st.stopping) return;
+  const t = Date.now() - (st.speakAt || 0);
+  if (!force && (t < 1500 || (!st.heardAny && t < 3000))) {
+    setMode("speak", "끝까지 말한 다음 눌러요 🙂");
+    clearTimeout(st.modeT);
+    st.modeT = setTimeout(() => { if (st.speakCtrl === c && !st.stopping) setMode("speak", "말하는 중… 지금 말해요!"); }, 1400);
+    return;
+  }
+  st.stopping = true;
+  setMode("speak", "⏳ 확인 중… 잠깐만요");
+  const m = document.getElementById("mic");
+  if (m) { m.classList.add("cool"); if (m.textContent.includes("다 말했어요")) m.textContent = "⏳ 확인 중…"; }
+  try { c.stop?.(); } catch {}
+}
 
 // ═════════════ 따라 말하기: 정확도 판정 + 억양·강세 그래프 ═════════════
 const selfMode = () => !canRecognize; // 받아쓰기 기능 자체가 없는 브라우저만 스스로 체크 (아이폰 사파리는 항상 판정)
@@ -534,6 +556,7 @@ function makeSpeaker(w) {
     const heard = document.getElementById("heard"), mic = document.getElementById("mic");
     if (selfMode()) { heard.textContent = "잘했어요! 👏"; fx("ok"); return true; }
     if (sp.busy) { stopSpeaking(); return null; }   // 말하는 중에 다시 누르면 '다 말했어요'
+    if (micLocked()) return null;                    // 결과 직후 연타 무시
     sp.busy = true;
     const target = sp.kind === "w" ? S.spoken(w) : w.example;
     const label = mic.textContent;
@@ -987,6 +1010,7 @@ function quizSentence(step, w) {
   document.getElementById("mic").onclick = async () => {
     if (answered) return;
     if (busy) { stopSpeaking(); return; }   // 말하는 중에 다시 누르면 '다 말했어요'
+    if (micLocked()) return;
     busy = true;
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
     mic.classList.add("on"); heard.textContent = "듣고 있어요… 읽어 보세요! 다 읽으면 🎤를 한 번 더 눌러요";
@@ -1060,6 +1084,7 @@ function quizSpeak(step, w) {
   document.getElementById("mic").onclick = async () => {
     if (answered) return;
     if (busy) { stopSpeaking(); return; }
+    if (micLocked()) return;
     busy = true;
     const mic = document.getElementById("mic"), stars = document.getElementById("stars"), heard = document.getElementById("heard");
     mic.classList.add("on"); heard.textContent = "듣고 있어요…";
@@ -1159,7 +1184,7 @@ function finishReviewOnly() {
 }
 
 function endLesson(navigate = true) {
-  stopSpeaking(); setMode(null);
+  stopSpeaking(true); setMode(null);
   stopAll();
   document.querySelector(".feedback")?.remove();
   document.querySelector(".party")?.remove();

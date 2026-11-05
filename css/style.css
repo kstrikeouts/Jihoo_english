@@ -488,3 +488,6 @@ body.is-speaking .speak-panel { box-shadow: 0 0 0 3px rgba(255,91,91,.4), var(--
 .device-pick .dev small { font-size: 14px; font-weight: 400; opacity: .85; }
 button.sync { background: none; border: 0; padding: 6px 4px; font: inherit; color: var(--muted); cursor: pointer; }
 button.sync.test { background: #FFF1D6; color: #9A5B00; border-radius: 999px; padding: 6px 12px; font-weight: 700; }
+
+/* 마이크 버튼 쉬는 중 (연타 방지) */
+#mic.cool { opacity: .55; pointer-events: none; filter: grayscale(.3); transition: opacity .2s; }

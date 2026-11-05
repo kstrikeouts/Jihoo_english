@@ -13,9 +13,14 @@ export function listenOnce({ lang = "en-US", timeoutMs = 7000, onInterim = null,
     rec.interimResults = !!onInterim;
     rec.continuous = false;
     rec.maxAlternatives = 5;
-    let done = false, lastInterim = "";
-    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(t); try { rec.abort(); } catch { try { rec.stop(); } catch {} } fn(v); };
-    if (ctrl) ctrl.stop = () => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech")));
+    let done = false, lastInterim = "", grace = null;
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(t); clearTimeout(grace); try { rec.abort(); } catch { try { rec.stop(); } catch {} } fn(v); };
+    // '다 말했어요': 바로 끊지 않고 받아쓰기가 마지막 결과를 정리할 시간(최대 1.5초)을 줌
+    if (ctrl) ctrl.stop = () => {
+      if (done || grace) return;
+      try { rec.stop(); } catch {}
+      grace = setTimeout(() => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech"))), 1500);
+    };
     const t = setTimeout(() => (lastInterim ? finish(resolve, [lastInterim]) : finish(reject, new Error("no-speech"))), timeoutMs);
     rec.onresult = (e) => {
       const last = e.results[e.results.length - 1];
